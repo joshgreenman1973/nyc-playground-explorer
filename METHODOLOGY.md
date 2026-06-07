@@ -166,7 +166,22 @@ the children actually are**:
   entirely. A high ratio signals "few *mapped public* playgrounds per child," a
   starting question rather than a verdict.
 
-All three sidebar rankings are restricted to **residential NTAs** (type `0`),
+**4. Both (bivariate).** A two-variable choropleth that shows kid density and
+playground density *at the same time*, using a 3×3 color matrix. Each
+neighborhood is sorted into low/medium/high **tertiles** on each variable
+(thresholds computed from the residential-NTA distribution), and the two classes
+pick a color:
+
+- **Teal** = many children, few playgrounds (the underserved corner)
+- **Magenta** = many playgrounds, few children
+- **Dark blue** = lots of both
+- **Grey** = few of either
+
+Its ranking lists the neighborhoods in the high-children / low-playground cell —
+e.g. Upper East Side–Lenox Hill–Roosevelt Island, Bedford Park, the Upper East
+Side and Flatbush.
+
+All four sidebar rankings are restricted to **residential NTAs** (type `0`),
 excluding park, cemetery, airport and other non-residential tabulation areas
 whose figures are not meaningful.
 

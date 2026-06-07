@@ -161,6 +161,11 @@
   .legend .row{display:flex;align-items:center;gap:8px;margin:4px 0}
   .legend .sw{width:16px;height:12px;border-radius:3px;flex:0 0 16px}
   .legend .note{margin-top:8px;color:var(--mut);font-size:10px;line-height:1.4}
+  .biv{display:flex;gap:6px;align-items:stretch}
+  .biv-y{writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;color:var(--mut);text-align:center}
+  .biv-grid{display:grid;grid-template-columns:repeat(3,17px);grid-template-rows:repeat(3,17px);gap:2px}
+  .biv-grid span{display:block;border-radius:2px}
+  .biv-x{font-size:9px;color:var(--mut);text-align:center;margin-top:3px}
   .zoomhint{position:absolute;left:50%;transform:translateX(-50%);bottom:20px;background:var(--ink);color:var(--paper2);font-size:12px;font-weight:500;padding:8px 15px;border-radius:999px;z-index:600;pointer-events:none;opacity:0;transition:opacity .3s;box-shadow:0 3px 12px rgba(0,0,0,.25)}
   .zoomhint.show{opacity:1}
 
@@ -236,6 +241,22 @@
     </div>
 
     <div class="group pad">
+      <h2 class="sec">Neighborhood density</h2>
+      <div class="toggle blue" id="densToggle"><div class="switch"></div><span>Shade neighborhoods by density</span></div>
+      <div id="densPanel">
+        <div class="seg" id="metricSeg">
+          <button data-m="playgrounds" class="on">Playgrounds</button>
+          <button data-m="children">Children</button>
+          <button data-m="ratio">Kids / pg</button>
+          <button data-m="bivariate">Both</button>
+        </div>
+        <div id="rankTitle"></div>
+        <ol id="rankList"></ol>
+        <div class="dens-note" id="densNote"></div>
+      </div>
+    </div>
+
+    <div class="group pad">
       <h2 class="sec">Show on the map</h2>
       <div class="subhead">Playgrounds</div>
       <div id="filtersPg"></div>
@@ -248,21 +269,6 @@
     <div class="group pad">
       <h2 class="sec">Borough</h2>
       <div class="pill-row" id="boros"></div>
-    </div>
-
-    <div class="group pad">
-      <h2 class="sec">Neighborhood density</h2>
-      <div class="toggle blue" id="densToggle"><div class="switch"></div><span>Shade neighborhoods by density</span></div>
-      <div id="densPanel">
-        <div class="seg" id="metricSeg">
-          <button data-m="playgrounds" class="on">Playgrounds</button>
-          <button data-m="children">Children</button>
-          <button data-m="ratio">Kids / pg</button>
-        </div>
-        <div id="rankTitle"></div>
-        <ol id="rankList"></ol>
-        <div class="dens-note" id="densNote"></div>
-      </div>
     </div>
 
     <div class="group pad">
@@ -462,6 +468,27 @@ let qt;document.getElementById("nameFilter").oninput=function(){clearTimeout(qt)
 
 // ---------- density ----------
 function bucket(v,stops){for(const[t,c]of stops)if(v>=t)return c;return stops[stops.length-1][1];}
+// bivariate (kid density x playground density) — tertiles + 3x3 palette
+let BIV={pgT:[0,0],kidT:[0,0]};
+const BIV_COLORS=[                                  // [pgClass][kidClass]
+  ["#e8e8e8","#b8d6d6","#5ac8c8"],                  // pg low  → teal = many kids, few pgs
+  ["#cfb0cf","#9aacba","#56989f"],                  // pg med
+  ["#be64ac","#8e6aa0","#3b4994"],                  // pg high → dark = many of both
+];
+function classOf(v,t){return v>=t[1]?2:v>=t[0]?1:0;}
+function computeTertiles(){
+  const res=ntaGeo.features.map(f=>f.properties).filter(p=>p.type==="0"&&p.area>=0.05);
+  const q=(arr,p)=>{const s=[...arr].sort((a,b)=>a-b);return s[Math.floor(p*s.length)];};
+  BIV={pgT:[q(res.map(p=>p.per_sqmi),1/3),q(res.map(p=>p.per_sqmi),2/3)],
+       kidT:[q(res.map(p=>p.kids_sqmi),1/3),q(res.map(p=>p.kids_sqmi),2/3)]};
+}
+function bivLegendHtml(){
+  let cells="";
+  for(let pc=2;pc>=0;pc--)for(let kc=0;kc<3;kc++)
+    cells+=`<span style="background:${BIV_COLORS[pc][kc]}"></span>`;
+  return `<div class="biv"><div class="biv-y">More playgrounds →</div>`+
+    `<div><div class="biv-grid">${cells}</div><div class="biv-x">More children →</div></div></div>`;
+}
 const METRICS={
   playgrounds:{
     title:"Playgrounds / sq mi", rankTitle:"Most playground-dense (per sq mi)",
@@ -488,6 +515,14 @@ const METRICS={
     note:"Children under 18 ÷ public playgrounds. Higher = each playground serves more kids.",
     rankVal:p=> p.count===0 ? (p.kids>0?1e9:-1) : p.kids_per_pg,
     rankFmt:p=> p.count===0 ? "no pg" : p.kids_per_pg.toLocaleString()
+  },
+  bivariate:{
+    title:"Children × playgrounds", rankTitle:"Many children, fewest playgrounds",
+    colorOf:p=>(p.kids<=0||p.area<=0)?"#f1efea":BIV_COLORS[classOf(p.per_sqmi,BIV.pgT)][classOf(p.kids_sqmi,BIV.kidT)],
+    fmt:p=>`${p.kids_sqmi.toLocaleString()} kids · ${p.per_sqmi} playgrounds per sq mi<br>${p.count} playground${p.count===1?"":"s"} · ${p.kids.toLocaleString()} children`,
+    note:"Two variables at once: teal = many children but few playgrounds; magenta = many playgrounds, few children; dark blue = lots of both; grey = few of either.",
+    rankVal:p=> (p.kids>0&&classOf(p.per_sqmi,BIV.pgT)===0)?p.kids_sqmi:-1,
+    rankFmt:p=>p.kids_sqmi.toLocaleString()+" kids/mi²"
   }
 };
 let curMetric="playgrounds";
@@ -498,7 +533,9 @@ function applyMetric(){
     ntaLayer.eachLayer(l=>l.setTooltipContent(`<b>${l.feature.properties.name}</b>${m.fmt(l.feature.properties)}`));
   }
   document.getElementById("legendTitle").textContent=m.title;
-  document.getElementById("legendBody").innerHTML=m.legend.map(([t,c])=>`<div class="row"><span class="sw" style="background:${c}"></span> ${t}</div>`).join("");
+  document.getElementById("legendBody").innerHTML= curMetric==="bivariate"
+    ? bivLegendHtml()
+    : m.legend.map(([t,c])=>`<div class="row"><span class="sw" style="background:${c}"></span> ${t}</div>`).join("");
   document.getElementById("legendNote").textContent=m.note;
   document.getElementById("rankTitle").textContent=m.rankTitle;
   const rank=ntaGeo.features.map(f=>f.properties).filter(p=>p.type==="0"&&p.area>=0.05)
@@ -537,7 +574,7 @@ function buildStrip(){
 }
 function loadDensity(){
   return fetch("data/neighborhoods.json").then(r=>r.json()).then(geo=>{
-    ntaGeo=geo; buildStrip();
+    ntaGeo=geo; computeTertiles(); buildStrip();
     ntaLayer=L.geoJSON(geo,{pane:"overlayPane",
       style:f=>({color:"#fff",weight:1,fillColor:"#eef3f8",fillOpacity:.64}),
       onEachFeature:(f,layer)=>layer.bindTooltip("",{className:"nta-tip",sticky:true})});
