@@ -164,17 +164,45 @@
   .zoomhint{position:absolute;left:50%;transform:translateX(-50%);bottom:20px;background:var(--ink);color:var(--paper2);font-size:12px;font-weight:500;padding:8px 15px;border-radius:999px;z-index:600;pointer-events:none;opacity:0;transition:opacity .3s;box-shadow:0 3px 12px rgba(0,0,0,.25)}
   .zoomhint.show{opacity:1}
 
+  /* drag handle for the mobile bottom sheet */
+  .sheet-grip{display:none}
+
   @media(max-width:760px){
-    #app{flex-direction:column}
-    #map{order:1;height:52%}
-    #panel{order:2;width:100%;flex:1;height:48%;border-right:none;border-top:1.5px solid var(--ink)}
+    #app{display:block;position:relative}
+    #map{position:absolute;inset:0;width:100%;height:100%}
+    .leaflet-top.leaflet-left{margin-top:60px}
+    /* compact stat strip */
+    .stat-tile{min-width:108px;padding:7px 12px}
+    .stat-tile .v{font-size:16px}
+    .stat-tile .l{font-size:9px;max-width:118px}
+    /* legends sit just under the strip so the sheet doesn't hide them */
+    .legend{bottom:auto;top:70px;right:10px;max-width:46vw;font-size:11px}
+    .legend.cond{top:70px;left:10px;right:auto}
+    .zoomhint{bottom:calc(46vh + 14px)}
+    /* bottom sheet */
+    #panel{position:fixed;left:0;right:0;bottom:0;width:100%;height:46vh;max-height:92vh;
+      border-right:none;border-top:none;border-radius:20px 20px 0 0;
+      box-shadow:0 -8px 30px rgba(35,36,31,.24);z-index:1200;
+      transition:height .26s cubic-bezier(.4,0,.2,1);overscroll-behavior:contain}
+    #panel.expanded{height:90vh}
+    .sheet-grip{display:block;position:sticky;top:0;z-index:6;background:var(--paper);
+      padding:10px 0 7px;cursor:grab;border-radius:20px 20px 0 0;touch-action:none}
+    .sheet-grip::before{content:"";display:block;width:42px;height:5px;border-radius:3px;background:var(--line2);margin:0 auto}
+    header.brand{padding:8px 22px 14px}
+    .wm h1{font-size:22px}
     header.brand p{display:none}
+    .count{margin-top:9px}
+    /* roomier tap targets */
+    .filter{padding:9px 0}
+    .pill{padding:8px 14px}
+    .group{animation:none}
   }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="panel">
+    <div class="sheet-grip" id="sheetGrip" aria-label="Drag or tap to expand"></div>
     <header class="brand pad group">
       <div class="wm">
         <svg width="34" height="34" viewBox="0 0 40 40" fill="none">
@@ -562,6 +590,12 @@ function ringHas(x,y,r){let inside=false;for(let i=0,j=r.length-1;i<r.length;j=i
 function polyHas(x,y,rings){let c=false;for(const r of rings)if(ringHas(x,y,r))c=!c;return c;}
 function geoHas(x,y,g){return !g?false:g.type==="Polygon"?polyHas(x,y,g.coordinates):g.type==="MultiPolygon"?g.coordinates.some(pp=>polyHas(x,y,pp)):false;}
 const BLUE_DOT='<div style="width:14px;height:14px;border-radius:50%;background:#2f6fb0;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>';
+function isMobile(){return window.matchMedia("(max-width:760px)").matches;}
+function fitOpts(){
+  if(!isMobile())return{padding:[24,24]};
+  const ph=document.getElementById("panel").getBoundingClientRect().height;
+  return{paddingTopLeft:[12,74],paddingBottomRight:[12,Math.round(ph)+14]};
+}
 
 async function showNearby(lat,lon,label){
   lastLoc={lat,lon,label};
@@ -571,6 +605,7 @@ async function showNearby(lat,lon,label){
   const box=document.getElementById("nearby");
   box.classList.add("show");
   box.innerHTML=`<div class="hd">Measuring a <b>${mins}-minute walk</b> along the street network…</div>`;
+  if(isMobile()){const pn=document.getElementById("panel");pn.style.height=Math.round(window.innerHeight*0.58)+"px";pn.scrollTop=0;setTimeout(()=>map.invalidateSize(),180);}
   const iso=await fetchIso(lat,lon);
   if(!lastLoc||lastLoc.lat!==lat||lastLoc.lon!==lon) return;   // superseded
   const geom=iso?iso[mins]:null;
@@ -578,11 +613,11 @@ async function showNearby(lat,lon,label){
   if(geom){
     L.geoJSON(geom,{style:{color:"#2f6fb0",weight:2,dashArray:"4 3",fillColor:"#2f6fb0",fillOpacity:.09}}).addTo(findLayer);
     inReach=p=>geoHas(p.c[1],p.c[0],geom); method="along streets";
-    try{map.fitBounds(L.geoJSON(geom).getBounds().pad(0.12));}catch(e){}
+    try{map.fitBounds(L.geoJSON(geom).getBounds(),fitOpts());}catch(e){}
   }else{
     L.circle([lat,lon],{radius:walkMi*1609.34,color:"#2f6fb0",weight:1.5,fillColor:"#2f6fb0",fillOpacity:.07}).addTo(findLayer);
     inReach=p=>miBetween(lat,lon,p.c[0],p.c[1])<=walkMi; method="straight-line";
-    map.fitBounds(L.latLng(lat,lon).toBounds(walkMi*1609.34*2.4));
+    map.fitBounds(L.latLng(lat,lon).toBounds(walkMi*1609.34*2.4),fitOpts());
   }
   const sites=new Map();
   for(const p of places){
@@ -611,7 +646,8 @@ async function showNearby(lat,lon,label){
   document.getElementById("clrNear").onclick=()=>{box.classList.remove("show");findLayer.clearLayers();lastLoc=null;};
   box.querySelectorAll("li").forEach(li=>li.onclick=()=>{
     const la=+li.dataset.lat,lo=+li.dataset.lon;const pl=places.find(p=>p.c[0]===la&&p.c[1]===lo);
-    map.flyTo([la,lo],18);if(pl)setTimeout(()=>L.popup({maxWidth:268}).setLatLng([la,lo]).setContent(popupHtml(pl)).openOn(map),650);
+    if(isMobile()){document.getElementById("panel").style.height="120px";setTimeout(()=>map.invalidateSize(),200);}
+    map.flyTo([la,lo],18);if(pl)setTimeout(()=>L.popup({maxWidth:268}).setLatLng([la,lo]).setContent(popupHtml(pl)).openOn(map),700);
   });
 }
 document.getElementById("locate").onclick=function(){
@@ -621,6 +657,20 @@ document.getElementById("locate").onclick=function(){
     b.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Use my location';},
     ()=>{alert("Couldn't get your location.");b.textContent="Use my location";});
 };
+
+// ---------- mobile bottom sheet (drag + tap to expand) ----------
+(function(){
+  const panelEl=document.getElementById("panel"), grip=document.getElementById("sheetGrip");
+  if(!grip) return;
+  const vh=p=>Math.round(window.innerHeight*p);
+  let startY=null,startH=0,moved=false;
+  const apply=h=>{panelEl.style.height=h+"px";};
+  grip.addEventListener("touchstart",e=>{startY=e.touches[0].clientY;startH=panelEl.getBoundingClientRect().height;moved=false;panelEl.style.transition="none";},{passive:true});
+  grip.addEventListener("touchmove",e=>{if(startY==null)return;const dy=startY-e.touches[0].clientY;if(Math.abs(dy)>4)moved=true;apply(Math.max(96,Math.min(vh(.92),startH+dy)));},{passive:true});
+  grip.addEventListener("touchend",()=>{if(startY==null)return;panelEl.style.transition="";const h=panelEl.getBoundingClientRect().height;const snaps=[110,vh(.46),vh(.9)];apply(snaps.reduce((a,b)=>Math.abs(b-h)<Math.abs(a-h)?b:a));startY=null;setTimeout(()=>map.invalidateSize(),320);});
+  grip.addEventListener("click",()=>{if(moved){moved=false;return;}const h=panelEl.getBoundingClientRect().height;apply(h<vh(.9)*0.85?vh(.9):vh(.46));setTimeout(()=>map.invalidateSize(),320);});
+  window.addEventListener("resize",()=>{panelEl.style.height="";setTimeout(()=>map.invalidateSize(),250);});
+})();
 
 buildFilters();buildBoros();
 fetch("data/places.json").then(r=>r.json()).then(d=>{places=d;updateCounts();render();loadDensity();})
