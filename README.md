@@ -25,9 +25,10 @@ volleyball and bocce courts.
 - **Neighborhood density** choropleth with three comparable metrics — playgrounds
   per square mile, children per square mile, and **children per playground** —
   across 262 neighborhoods, each with a live ranking
+- **Spray showers, outdoor pools and recreation center** layers (toggleable)
 - **Address autocomplete** (free NYC GeoSearch) that counts the playgrounds and
-  parks within a **10- or 20-minute walk**; each park is counted once even if it
-  holds many courts
+  parks within a **10- or 20-minute walk along the street network** (pedestrian
+  isochrones via Valhalla/FOSSGIS); each park counted once even with many courts
 - Filter by amenity type, borough, and wheelchair accessibility
 - "Use my location" geolocation and one-tap Google Maps directions
 

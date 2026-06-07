@@ -40,7 +40,7 @@
   .wm{display:flex;align-items:center;gap:11px}
   .wm svg{flex:0 0 auto}
   .wm h1{margin:0;font-family:var(--serif);font-weight:900;font-size:27px;line-height:.95;letter-spacing:-.01em;font-optical-sizing:auto}
-  .wm h1 em{font-style:italic;font-weight:500;color:var(--green)}
+  .wm h1 em{font-style:normal;font-weight:900;color:var(--green)}
   header.brand p{margin:11px 0 0;font-size:12.5px;color:var(--ink2);line-height:1.5;max-width:33ch}
   .count{margin-top:12px;font-size:12.5px;color:var(--ink2);display:flex;align-items:baseline;gap:6px}
   .count b{font-family:var(--serif);font-weight:600;font-size:18px;color:var(--ink)}
@@ -213,6 +213,8 @@
       <div id="filtersPg"></div>
       <div class="subhead">Courts</div>
       <div id="filtersCt"></div>
+      <div class="subhead">Water &amp; recreation</div>
+      <div id="filtersWater"></div>
     </div>
 
     <div class="group pad">
@@ -249,10 +251,12 @@
       Playgrounds: NYC Parks, DOE <a href="https://data.cityofnewyork.us/d/dbmp-698d" target="_blank">Schoolyards to Playgrounds</a>,
       and <a href="https://data.cityofnewyork.us/d/phvi-damg" target="_blank">NYCHA</a>-land playgrounds from
       <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> (ODbL).
-      Courts &amp; neighborhoods: NYC Parks, City Planning, 2020 Census.
+      Courts, spray showers, pools, recreation centers &amp; neighborhoods: NYC Parks, City Planning, 2020 Census.
       Condition: <a href="https://data.cityofnewyork.us/d/yg3y-7juh" target="_blank">Parks Inspection Program</a>, 2025–26 only.
       Accessibility: NYC Parks playground classification (Levels 1–4), known for Parks playgrounds only.
-      Each park counts once. Handball = NYC's racquetball-style courts. Walk radius is straight-line.
+      Each park counts once. Handball = NYC's racquetball-style courts.
+      Walking distance follows the street network (pedestrian isochrones via
+      <a href="https://valhalla1.openstreetmap.de" target="_blank">Valhalla / FOSSGIS</a> on OpenStreetMap; straight-line if unavailable).
       Addresses via <a href="https://geosearch.planninglabs.nyc" target="_blank">NYC GeoSearch</a>.
     </footer>
   </div>
@@ -283,7 +287,11 @@ const CATS=[
   {key:"Pickleball",label:"Pickleball courts",color:"#e0a92b",grp:"ct"},
   {key:"Volleyball",label:"Volleyball courts",color:"#7b59c4",grp:"ct"},
   {key:"Bocce",label:"Bocce courts",color:"#9a6b3f",grp:"ct"},
+  {key:"spray",label:"Spray showers / sprinklers",color:"#3aa6d6",grp:"water"},
+  {key:"pool",label:"Outdoor pools",color:"#1f6fb0",grp:"water"},
+  {key:"rec",label:"Recreation centers",color:"#6a4ca8",grp:"water"},
 ];
+const KINDLABEL={spray:"Spray shower / sprinkler",pool:"Outdoor pool",rec:"Recreation center"};
 const COLOR=Object.fromEntries(CATS.map(c=>[c.key,c.color]));
 const PG_COLOR="#1f7a44";
 const TAGLABEL={parks:"NYC Parks playground",school:"School playground",nycha:"NYCHA playground"};
@@ -292,6 +300,7 @@ const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov",
 const BOROS=["Manhattan","Brooklyn","Queens","Bronx","Staten Island"];
 const POLY_ZOOM=15;
 const state={cats:new Set(CATS.map(c=>c.key)),boros:new Set(BOROS),accOnly:false,q:""};
+state.cats.delete("spray");  // spray showers off by default (1,100+ points) — toggle on
 let places=[], ntaGeo=null, ntaLayer=null, densOn=false, condOn=false, walkMi=0.5, lastLoc=null;
 
 function gradeDate(d){if(!d)return"";const[y,m]=d.split("-");return `${MONTHS[+m-1]} ${y}`;}
@@ -310,8 +319,8 @@ const cluster=L.markerClusterGroup({maxClusterRadius:50,chunkedLoading:true,disa
 const polyLayer=L.layerGroup();
 const findLayer=L.layerGroup().addTo(map);
 
-function catOf(p){return p.kind==="playground"?p.src:(p.sports[0]||"Basketball");}
-function placeCats(p){return p.kind==="playground"?[p.src]:p.sports;}
+function catOf(p){return p.kind==="playground"?p.src:p.kind==="court"?(p.sports[0]||"Basketball"):p.kind;}
+function placeCats(p){return p.kind==="playground"?[p.src]:p.kind==="court"?p.sports:[p.kind];}
 function icon(c){const s=13;return L.divIcon({html:`<div class="marker-pin" style="width:${s}px;height:${s}px;background:${c}"></div>`,className:"",iconSize:[s,s],iconAnchor:[s/2,s/2]});}
 function gmaps(p){return `https://www.google.com/maps/dir/?api=1&destination=${p.c[0]},${p.c[1]}`;}
 
@@ -323,25 +332,29 @@ function condBadge(p){
 function accBadge(p){
   if(p.kind==="playground"&&p.acc===true)
     return `<span class="badge acc">&#9855; Accessible${p.acclvl?` · ${ACCLVL[p.acclvl]}`:""}</span>`;
-  if(p.kind==="court"&&p.acc===true) return `<span class="badge acc">&#9855; Wheelchair-accessible</span>`;
+  if((p.kind==="court"||p.kind==="pool")&&p.acc===true) return `<span class="badge acc">&#9855; Wheelchair-accessible</span>`;
   return "";
 }
 function litBadge(p){return (p.kind==="court"&&p.lit)?`<span class="badge lit">☾ Lit for evening play</span>`:"";}
 
 function popupHtml(p){
-  const tags=placeCats(p).map(c=>`<span class="pop-tag" style="background:${COLOR[c]||'#888'}">${TAGLABEL[c]||c}</span>`).join("");
-  const surf=p.surface?` · ${p.surface}`:"";
+  const amenity=p.kind==="playground"||p.kind==="court";
+  const tags=placeCats(p).map(c=>`<span class="pop-tag" style="background:${COLOR[c]||'#888'}">${TAGLABEL[c]||KINDLABEL[c]||c}</span>`).join("");
+  const surf=p.kind==="court"&&p.surface?` · ${p.surface}`:p.kind==="pool"&&p.size?` · ${p.size}`:p.kind==="rec"&&p.rectype?` · ${p.rectype}`:"";
+  const cond=amenity?condBadge(p):"";
   return `<div class="pop-title">${p.name}</div>`+(p.loc?`<div class="pop-loc">${p.loc}${surf}</div>`:"")+
     `<div class="pop-tags">${tags}</div>`+
-    `<div>${condBadge(p)}${accBadge(p)}${litBadge(p)}</div>`+
+    `<div>${cond}${accBadge(p)}${litBadge(p)}</div>`+
     `<a class="pop-dir" href="${gmaps(p)}" target="_blank">Directions</a>`;
 }
 function tipHtml(p){
-  const what=p.kind==="playground"?(TAGLABEL[p.src]||"Playground"):p.sports.join(", ")+" court"+(p.sports.length>1?"s":"");
-  const extra=p.kind==="court"&&p.surface?` · ${p.surface}`:"";
+  let what;
+  if(p.kind==="playground")what=TAGLABEL[p.src]||"Playground";
+  else if(p.kind==="court")what=p.sports.join(", ")+" court"+(p.sports.length>1?"s":"")+(p.surface?` · ${p.surface}`:"");
+  else what=KINDLABEL[p.kind]||p.kind;
   const acc=p.acc===true?" ♿":"";
   const cond=p.grade?`<br><span class="t-sub">${p.grade==="A"?"✓ Acceptable":"✗ Unacceptable"} · ${gradeDate(p.graded)}</span>`:"";
-  return `<b>${p.name}</b><br><span class="t-sub">${what}${extra}${acc}</span>${cond}`;
+  return `<b>${p.name}</b><br><span class="t-sub">${what}${acc}</span>${cond}`;
 }
 
 function passes(p){
@@ -399,12 +412,13 @@ function buildFilters(){
     const w=document.getElementById(wrapId);
     CATS.filter(c=>c.grp===grp).forEach(c=>{
       const row=document.createElement("label");row.className="filter";
+      row.classList.toggle("off",!state.cats.has(c.key));
       row.innerHTML=`<span class="dot" style="background:${c.color}"></span><span class="lbl">${c.label}</span><span class="n" data-n="${c.key}"></span>`;
       row.onclick=()=>{state.cats.has(c.key)?state.cats.delete(c.key):state.cats.add(c.key);row.classList.toggle("off",!state.cats.has(c.key));render();};
       w.appendChild(row);
     });
   };
-  mk("filtersPg","pg"); mk("filtersCt","ct");
+  mk("filtersPg","pg"); mk("filtersCt","ct"); mk("filtersWater","water");
 }
 function buildBoros(){
   const w=document.getElementById("boros");
@@ -530,17 +544,51 @@ document.getElementById("walkSeg").onclick=function(e){const b=e.target.closest(
   walkMi=+b.dataset.mi;this.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
   if(lastLoc)showNearby(lastLoc.lat,lastLoc.lon,lastLoc.label);};
 
-function showNearby(lat,lon,label){
+// street-network walking isochrones via Valhalla (FOSSGIS, free, no key)
+const isoCache={};
+async function fetchIso(lat,lon){
+  const k=lat.toFixed(5)+","+lon.toFixed(5);
+  if(k in isoCache) return isoCache[k];
+  const q={locations:[{lat,lon}],costing:"pedestrian",contours:[{time:10},{time:20}],polygons:true};
+  try{
+    const r=await fetch("https://valhalla1.openstreetmap.de/isochrone?json="+encodeURIComponent(JSON.stringify(q)));
+    if(!r.ok) throw 0;
+    const d=await r.json(); const out={};
+    (d.features||[]).forEach(f=>{out[Math.round(f.properties.contour)]=f.geometry;});
+    isoCache[k]=out; return out;
+  }catch(e){ isoCache[k]=null; return null; }
+}
+function ringHas(x,y,r){let inside=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))inside=!inside;}return inside;}
+function polyHas(x,y,rings){let c=false;for(const r of rings)if(ringHas(x,y,r))c=!c;return c;}
+function geoHas(x,y,g){return !g?false:g.type==="Polygon"?polyHas(x,y,g.coordinates):g.type==="MultiPolygon"?g.coordinates.some(pp=>polyHas(x,y,pp)):false;}
+const BLUE_DOT='<div style="width:14px;height:14px;border-radius:50%;background:#2f6fb0;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>';
+
+async function showNearby(lat,lon,label){
   lastLoc={lat,lon,label};
   findLayer.clearLayers();
-  L.circle([lat,lon],{radius:walkMi*1609.34,color:"#2f6fb0",weight:1.5,fillColor:"#2f6fb0",fillOpacity:.07}).addTo(findLayer);
-  L.marker([lat,lon],{icon:L.divIcon({className:"",iconSize:[18,18],iconAnchor:[9,9],
-    html:'<div style="width:14px;height:14px;border-radius:50%;background:#2f6fb0;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>'})}).addTo(findLayer);
-  map.fitBounds(L.latLng(lat,lon).toBounds(walkMi*1609.34*2.4));
+  L.marker([lat,lon],{icon:L.divIcon({className:"",iconSize:[18,18],iconAnchor:[9,9],html:BLUE_DOT})}).addTo(findLayer);
+  const mins=walkMi<=0.5?10:20;
+  const box=document.getElementById("nearby");
+  box.classList.add("show");
+  box.innerHTML=`<div class="hd">Measuring a <b>${mins}-minute walk</b> along the street network…</div>`;
+  const iso=await fetchIso(lat,lon);
+  if(!lastLoc||lastLoc.lat!==lat||lastLoc.lon!==lon) return;   // superseded
+  const geom=iso?iso[mins]:null;
+  let inReach, method;
+  if(geom){
+    L.geoJSON(geom,{style:{color:"#2f6fb0",weight:2,dashArray:"4 3",fillColor:"#2f6fb0",fillOpacity:.09}}).addTo(findLayer);
+    inReach=p=>geoHas(p.c[1],p.c[0],geom); method="along streets";
+    try{map.fitBounds(L.geoJSON(geom).getBounds().pad(0.12));}catch(e){}
+  }else{
+    L.circle([lat,lon],{radius:walkMi*1609.34,color:"#2f6fb0",weight:1.5,fillColor:"#2f6fb0",fillOpacity:.07}).addTo(findLayer);
+    inReach=p=>miBetween(lat,lon,p.c[0],p.c[1])<=walkMi; method="straight-line";
+    map.fitBounds(L.latLng(lat,lon).toBounds(walkMi*1609.34*2.4));
+  }
   const sites=new Map();
   for(const p of places){
+    if(p.kind!=="playground"&&p.kind!=="court")continue;
+    if(!inReach(p))continue;
     const d=miBetween(lat,lon,p.c[0],p.c[1]);
-    if(d>walkMi)continue;
     const key=p.prop||("@"+p.name);
     let s=sites.get(key);
     if(!s){s={name:p.name,d:d,lat:p.c[0],lon:p.c[1],pg:false,ct:false};sites.set(key,s);}
@@ -549,20 +597,17 @@ function showNearby(lat,lon,label){
   }
   const arr=[...sites.values()].sort((a,b)=>a.d-b.d);
   const pg=arr.filter(s=>s.pg).length, ct=arr.filter(s=>s.ct).length;
-  const mins=walkMi<=0.5?10:20;
   const ordered=arr.filter(s=>s.pg).concat(arr.filter(s=>!s.pg));
   const list=ordered.slice(0,12).map(s=>{
     const col=s.pg?PG_COLOR:"#e8722a";const tag=s.pg?(s.ct?" · + courts":""):" · courts";
     return `<li data-lat="${s.lat}" data-lon="${s.lon}"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>${s.name}${tag}</span><span class="d">${s.d.toFixed(2)} mi</span></li>`;
   }).join("");
-  const box=document.getElementById("nearby");
   box.innerHTML=
-    `<div class="hd">Within a <b>${mins}-minute walk</b> of <b>${label.split(",")[0]}</b> (${walkMi===0.5?"½":"1"} mile)</div>`+
+    `<div class="hd">Within a <b>${mins}-minute walk</b> ${method} of <b>${label.split(",")[0]}</b></div>`+
     `<div class="big"><div class="stat"><div class="num pg">${pg}</div><div class="lab">playground${pg===1?"":"s"}</div></div>`+
     `<div class="stat"><div class="num ct">${ct}</div><div class="lab">park${ct===1?"":"s"} with courts</div></div></div>`+
     (ordered.length?`<ul>${list}</ul>`:`<div class="hd">No public playgrounds or courts within reach.</div>`)+
     `<span class="clr" id="clrNear">Clear</span>`;
-  box.classList.add("show");
   document.getElementById("clrNear").onclick=()=>{box.classList.remove("show");findLayer.clearLayers();lastLoc=null;};
   box.querySelectorAll("li").forEach(li=>li.onclick=()=>{
     const la=+li.dataset.lat,lo=+li.dataset.lon;const pl=places.find(p=>p.c[0]===la&&p.c[1]===lo);

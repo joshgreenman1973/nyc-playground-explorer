@@ -18,6 +18,9 @@ published on the NYC Open Data portal. Two datasets are combined.
 | Condition grades | [Parks Inspection Program – Inspections](https://data.cityofnewyork.us/d/yg3y-7juh) | `yg3y-7juh` | 2025–26 |
 | Playground accessibility | NYC Parks accessibility classification (Levels 1–4) | `a4qt-mpr5` | 727 accessible |
 | Court lighting | Athletic Facilities `field_lighted` | `qnem-b8re` | 179 lit |
+| Spray showers / sprinklers | [NYC Parks Spray Showers](https://data.cityofnewyork.us/d/ckaz-6gaa) | `ckaz-6gaa` | 1,112 |
+| Outdoor pools | NYC Parks Directory of Outdoor Pools | `fx7a-24mf` | 79 |
+| Recreation centers | NYC Parks Directory of Recreation Centers | `ydj7-rk56` | 46 |
 | Park names & cross streets | [Parks Properties](https://data.cityofnewyork.us/d/enfh-gkve) | `enfh-gkve` | join key |
 | Neighborhood boundaries & area | [2020 Neighborhood Tabulation Areas](https://data.cityofnewyork.us/d/9nt8-h7nd) | `9nt8-h7nd` | 262 NTAs |
 | Tract → neighborhood crosswalk | [2020 Census Tracts to 2020 NTAs](https://data.cityofnewyork.us/d/hm78-6dwm) | `hm78-6dwm` | join key |
@@ -246,10 +249,33 @@ handball courts counts as **one playground** (and one park with courts), not six
 separate items. This is why the nearby list shows each park name only once even
 though the underlying data stores every court as its own record.
 
-A ½ mile is the standard planning proxy for a 10-minute walk (~3 mph), 1 mile for
-20 minutes. The radius is measured **as the crow flies**, not along the street
-network or accounting for barriers like highways or rivers, so the true walking
-catchment is somewhat smaller. Distances shown are straight-line.
+**Walking distance follows the street network, not a straight line.** When you
+enter an address, the map requests a pedestrian **isochrone** — the actual area
+reachable on foot in 10 or 20 minutes along real streets — from the free,
+no-key Valhalla routing service hosted by FOSSGIS (built on OpenStreetMap). The
+playground and court counts are then everything whose location falls inside that
+walk-shed. Because it routes along streets and around barriers (highways,
+rivers, rail yards), it is more realistic — and usually smaller — than a plain
+circle: e.g. near 100 Gold Street the street-network 10-minute walk reaches 5
+playgrounds where a ½-mile circle suggested 6. If the routing service is
+unavailable, the map falls back to a straight-line ½-mile (10 min) / 1-mile
+(20 min) circle and says so. The distances listed for each result are
+straight-line, as a rough sort order.
+
+## Water & recreation layers
+
+Three additional toggleable layers (under "Water & recreation"):
+
+- **Spray showers / sprinklers (1,112)** — NYC Parks summer water-play features.
+  Off by default because of their number; toggle on to show them.
+- **Outdoor pools (79)** — NYC Parks free outdoor pools, with size and wheelchair
+  accessibility in the popup.
+- **Recreation centers (46)** — NYC Parks rec centers; located by joining their
+  property ID to Parks Properties geometry (8 of 54 had no matching geometry and
+  are omitted).
+
+These layers are **not** counted in the playground/court walk totals or the
+neighborhood density metrics — they are reference layers only.
 
 ## Known limitations
 

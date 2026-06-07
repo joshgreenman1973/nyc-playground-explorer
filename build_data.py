@@ -32,6 +32,9 @@ SCHOOL_ID = "bbtf-6p3c"   # Schoolyards to Playgrounds (public access out of sch
 NYCHA_ID = "phvi-damg"    # NYCHA public housing development boundaries
 PIP_ID = "yg3y-7juh"      # Parks Inspection Program inspections (condition grades)
 ACCESS_ID = "a4qt-mpr5"   # carries NYC Parks playground accessibility level (1-4)
+SPRAY_ID = "ckaz-6gaa"    # NYC Parks spray showers / sprinklers
+POOL_URL = "https://www.nycgovparks.org/bigapps/DPR_Pools_outdoor_001.json"
+REC_URL = "https://www.nycgovparks.org/bigapps/DPR_RecreationCenter_001.json"
 BASE = "https://data.cityofnewyork.us/resource/{}.json"
 SQFT_PER_SQMI = 27_878_400.0
 DEDUP_DEG = 0.00065       # ~60 m: drop a playground this close to one already counted
@@ -58,6 +61,12 @@ def fetch(dataset_id, params):
     url = BASE.format(dataset_id) + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"User-Agent": "nyc-playground-explorer"})
     with urllib.request.urlopen(req, timeout=180) as r:
+        return json.load(r)
+
+
+def fetch_url(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "nyc-playground-explorer"})
+    with urllib.request.urlopen(req, timeout=120) as r:
         return json.load(r)
 
 
@@ -350,12 +359,67 @@ def build():
             "c": centroid_of(rings), "poly": rings,
         })
 
+    # ---------- Water & recreation layers (own toggles) ----------
+    # Spray showers / sprinklers
+    for row in fetch(SPRAY_ID, {}):
+        pt = row.get("point")
+        if not pt or not pt.get("coordinates"):
+            continue
+        lon, lat = pt["coordinates"][:2]
+        nm = (row.get("propname") or row.get("sitename") or "Spray shower").strip()
+        site = (row.get("sitename") or "").strip()
+        places.append({
+            "kind": "spray", "name": nm,
+            "loc": ("" if site == nm else site),
+            "boro": BORO.get(row.get("boro", ""), row.get("boro", "")), "prop": row.get("propnum", ""),
+            "sports": [], "acc": None, "c": [round(lat, 6), round(lon, 6)], "poly": None,
+        })
+
+    # Outdoor pools
+    for r in fetch_url(POOL_URL):
+        if not r.get("lat") or not r.get("lon"):
+            continue
+        pid = r.get("Prop_ID", "")
+        places.append({
+            "kind": "pool", "name": (r.get("Name", "") + " Pool").strip(),
+            "loc": (r.get("Location") or "").strip(),
+            "boro": BORO.get(pid[:1], ""), "prop": pid,
+            "sports": [], "acc": r.get("Accessible") == "Y", "size": (r.get("Size") or "").strip(),
+            "c": [round(float(r["lat"]), 6), round(float(r["lon"]), 6)], "poly": None,
+        })
+
+    # Recreation centers (coords joined from Parks Properties by Prop_ID)
+    rec_rows = fetch_url(REC_URL)
+    rec_ids = sorted({r["Prop_ID"] for r in rec_rows if r.get("Prop_ID")})
+    cmap = {}
+    if rec_ids:
+        inlist = ",".join("'%s'" % i for i in rec_ids)
+        for row in fetch(PROP_ID, {"$select": "gispropnum,multipolygon",
+                                   "$where": "gispropnum in (%s)" % inlist}):
+            rings = rings_latlng(row.get("multipolygon"))
+            if rings:
+                cmap[row["gispropnum"]] = centroid_of(rings)
+    for r in rec_rows:
+        c = cmap.get(r.get("Prop_ID"))
+        if not c:
+            continue
+        places.append({
+            "kind": "rec", "name": (r.get("NAME") or "Recreation center").strip(),
+            "loc": (r.get("ADDRESS") or "").strip(),
+            "boro": BORO.get((r.get("Prop_ID") or "")[:1], ""), "prop": r.get("Prop_ID", ""),
+            "sports": [], "acc": None, "rectype": (r.get("RecreationCenter_Type") or "").strip(),
+            "c": c, "poly": None,
+        })
+
     # ---------- Attach most-recent 2025-26 condition grade (PIP) ----------
     pip_site, pip_parent = pip_condition_grades()
     graded = 0
     for p in places:
-        g = (pip_site.get(p.get("omp")) or pip_site.get(p.get("prop"))
-             or pip_parent.get(p.get("prop")))
+        if p["kind"] in ("playground", "court"):
+            g = (pip_site.get(p.get("omp")) or pip_site.get(p.get("prop"))
+                 or pip_parent.get(p.get("prop")))
+        else:
+            g = None
         if g:
             p["grade"], p["graded"] = g["g"], g["d"]
             graded += 1
@@ -367,8 +431,9 @@ def build():
         json.dump(places, f, separators=(",", ":"))
     nA = sum(1 for p in places if p["grade"] == "A")
     nU = sum(1 for p in places if p["grade"] == "U")
-    print(f"Condition grades (2025-26): {graded}/{len(places)} graded "
-          f"({100*graded/len(places):.0f}%) — Acceptable {nA}, Unacceptable {nU}")
+    gradeable = sum(1 for p in places if p["kind"] in ("playground", "court"))
+    print(f"Condition grades (2025-26): {graded}/{gradeable} playgrounds+courts graded "
+          f"({100*graded/gradeable:.0f}%) — Acceptable {nA}, Unacceptable {nU}")
 
     # ---------- Neighborhood density ----------
     kids_by_nta = child_pop_by_nta()
@@ -435,7 +500,10 @@ def build():
         if p["kind"] == "playground":
             by_src[p["src"]] = by_src.get(p["src"], 0) + 1
     print(f"Playgrounds: {pg}  (" + ", ".join(f"{k}:{v}" for k, v in by_src.items())
-          + f")   Courts: {ct}   Total: {len(places)}")
+          + f")   Courts: {ct}")
+    for k in ("spray", "pool", "rec"):
+        print(f"  {k}: {sum(1 for p in places if p['kind']==k)}")
+    print(f"Total: {len(places)}")
     matched = sum(m["count"] for m in metas)
     print(f"Playgrounds matched to a neighborhood: {matched}/{pg}")
     ranking.sort(key=lambda r: r["per_sqmi"], reverse=True)
