@@ -31,6 +31,7 @@ DCA_ID, ATH_ID, PROP_ID, NTA_ID = "j55h-3upk", "qnem-b8re", "enfh-gkve", "9nt8-h
 SCHOOL_ID = "bbtf-6p3c"   # Schoolyards to Playgrounds (public access out of school hours)
 NYCHA_ID = "phvi-damg"    # NYCHA public housing development boundaries
 PIP_ID = "yg3y-7juh"      # Parks Inspection Program inspections (condition grades)
+ACCESS_ID = "a4qt-mpr5"   # carries NYC Parks playground accessibility level (1-4)
 BASE = "https://data.cityofnewyork.us/resource/{}.json"
 SQFT_PER_SQMI = 27_878_400.0
 DEDUP_DEG = 0.00065       # ~60 m: drop a playground this close to one already counted
@@ -74,6 +75,38 @@ def rings_latlng(geom, prec=5):
         if len(ring) >= 3:
             out.append(ring)
     return out or None
+
+
+def accessibility_points():
+    """NYC Parks playground accessibility points: (lat, lon, is_accessible, level).
+
+    From the dataset that carries the Parks accessibility classification
+    (Level 1-4). Matched to playgrounds by location. Level meanings:
+      1 Playgrounds for All Children
+      2 Accessible Playgrounds
+      3 + universally accessible swings
+      4 + transfer platforms and ground-level play features
+    """
+    def lvl(s):
+        for n in (4, 3, 2, 1):
+            if s and f"Level {n}" in s:
+                return n
+        return 0
+    out = []
+    for r in fetch(ACCESS_ID, {"$select": "latitude,longitude,accessibility,accessibilitylevel"}):
+        if r.get("latitude") and r.get("accessibility"):
+            out.append((float(r["latitude"]), float(r["longitude"]),
+                        r["accessibility"] == "Yes", lvl(r.get("accessibilitylevel"))))
+    return out
+
+
+def nearest_access(lat, lon, pts, thresh=0.0016):
+    best, bd = None, thresh
+    for alat, alon, acc, level in pts:
+        d = abs(alat - lat) + abs(alon - lon)
+        if d < bd:
+            bd, best = d, (acc, level)
+    return best
 
 
 def pip_condition_grades():
@@ -196,12 +229,15 @@ def build():
                           "loc": (row.get("location") or "").strip()}
 
     # --- Playgrounds from three public sources, deduped by proximity ---
+    acc_pts = accessibility_points()
     # 1. NYC Parks children's play areas (authoritative; kept first)
     pg_candidates = []
     for row in fetch(DCA_ID, {}):
         rings = rings_latlng(row.get("shape"))
         if not rings:
             continue
+        c = centroid_of(rings)
+        hit = nearest_access(c[0], c[1], acc_pts)
         pg_candidates.append({
             "src": "parks",
             "name": (row.get("publicname") or "Playground").strip(),
@@ -209,7 +245,9 @@ def build():
             "boro": BORO.get(row.get("borough", ""), row.get("borough", "")),
             "prop": row.get("gispropnum", ""),
             "omp": row.get("omppropid", ""),
-            "c": centroid_of(rings), "poly": rings,
+            "acc": (hit[0] if hit else None),
+            "acclvl": (hit[1] if hit and hit[0] else None),
+            "c": c, "poly": rings,
         })
 
     # 2. Schoolyards to Playgrounds (DOE schoolyards open to the public)
@@ -282,7 +320,8 @@ def build():
             "kind": "playground", "src": cand["src"],
             "name": cand["name"], "loc": cand["loc"], "boro": cand["boro"],
             "prop": cand["prop"], "omp": cand.get("omp", ""),
-            "sports": [], "acc": None, "surface": "", "dim": "",
+            "sports": [], "acc": cand.get("acc"), "acclvl": cand.get("acclvl"),
+            "surface": "", "dim": "",
             "c": cand["c"], "poly": cand["poly"],
         })
 
@@ -305,6 +344,7 @@ def build():
             "prop": row.get("gispropnum", ""),
             "sports": sports,
             "acc": str(row.get("accessible")).lower() == "true",
+            "lit": str(row.get("field_lighted")).lower() == "true",
             "surface": (row.get("surface_type") or "").strip(),
             "dim": (row.get("dimensions") or "").strip(),
             "c": centroid_of(rings), "poly": rings,

@@ -1,9 +1,9 @@
-# NYC Playground & Court Explorer
+# The NYC Playground Atlas
 
-An interactive map of every public playground and recreational court across New
-York City — children's play areas (swings, slides, climbers), plus basketball,
-handball (NYC's racquetball-style courts), tennis, pickleball, volleyball and
-bocce courts.
+An interactive field guide to every public playground and recreational court
+across New York City — children's play areas (swings, slides, climbers), plus
+basketball, handball (NYC's racquetball-style courts), tennis, pickleball,
+volleyball and bocce courts.
 
 **Live:** https://joshgreenman1973.github.io/nyc-playground-explorer/
 
@@ -12,6 +12,9 @@ bocce courts.
 - ~5,500 places across all five boroughs, clustered for fast browsing
 - **Playgrounds from three public sources** — NYC Parks, public schoolyards
   (Schoolyards to Playgrounds) and NYCHA developments (via OpenStreetMap)
+- **Accessibility badges** — NYC Parks' Level 1–4 playground accessibility
+  classification (727 accessible playgrounds), plus a "show only accessible" filter
+  and lit-court flags for evening play
 - **2025–26 condition grades** from the Parks Inspection Program — Acceptable /
   Unacceptable per site, shown in popups and as a "color by condition" toggle
 - **A statistics strip** summarizing densest / sparsest neighborhoods, the most

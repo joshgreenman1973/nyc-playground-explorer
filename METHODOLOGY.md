@@ -16,6 +16,8 @@ published on the NYC Open Data portal. Two datasets are combined.
 | NYCHA playgrounds | [OpenStreetMap](https://www.openstreetmap.org/copyright) ∩ [NYCHA Developments](https://data.cityofnewyork.us/d/phvi-damg) | `phvi-damg` | 122 |
 | Courts | [Athletic Facilities](https://data.cityofnewyork.us/d/qnem-b8re) | `qnem-b8re` | 4,072 |
 | Condition grades | [Parks Inspection Program – Inspections](https://data.cityofnewyork.us/d/yg3y-7juh) | `yg3y-7juh` | 2025–26 |
+| Playground accessibility | NYC Parks accessibility classification (Levels 1–4) | `a4qt-mpr5` | 727 accessible |
+| Court lighting | Athletic Facilities `field_lighted` | `qnem-b8re` | 179 lit |
 | Park names & cross streets | [Parks Properties](https://data.cityofnewyork.us/d/enfh-gkve) | `enfh-gkve` | join key |
 | Neighborhood boundaries & area | [2020 Neighborhood Tabulation Areas](https://data.cityofnewyork.us/d/9nt8-h7nd) | `9nt8-h7nd` | 262 NTAs |
 | Tract → neighborhood crosswalk | [2020 Census Tracts to 2020 NTAs](https://data.cityofnewyork.us/d/hm78-6dwm) | `hm78-6dwm` | join key |
@@ -192,6 +194,33 @@ safety surface, glass, graffiti, etc.) on the inspection day — it is a snapsho
 not a running average, and "Acceptable" is a floor, not a quality score. NYCHA
 playgrounds (sourced from OpenStreetMap, not NYC Parks) are **not** in PIP and so
 always show as "not rated."
+
+## Accessibility (disability-friendly playgrounds)
+
+NYC Parks classifies playground accessibility on a **four-level scale**, shown as
+a badge in each playground's popup and filterable with "Show only accessible
+sites":
+
+1. **Playgrounds for All Children**
+2. **Accessible Playgrounds**
+3. Accessible **+ universally accessible swings**
+4. Accessible **+ transfer platforms and ground-level play features** (the most
+   inclusive)
+
+**727 of the 1,010 NYC Parks playgrounds are accessible** (484 at Level 4, 134 at
+Level 2, 94 at Level 3, 13 at Level 1). The classification is joined to each
+playground by location (nearest match within ~120 m; 93% of Parks playgrounds
+matched).
+
+**Caveats.** (1) This is a *structural* classification — built features like
+transfer platforms don't change often, but the published source predates 2025,
+so treat it as "how this playground was last classified," not a fresh audit.
+(2) It exists for **NYC Parks playgrounds only** — school and NYCHA playgrounds
+have no accessibility data here and are not marked. (3) Courts carry NYC Parks'
+own `accessible` flag, but it is barely populated (only ~12 of 5,850 active
+facilities), so absence of a wheelchair badge on a court means "not recorded,"
+not "inaccessible." Lit courts (for evening play) are flagged from the
+`field_lighted` field — 179 of them.
 
 ## The statistics strip
 
