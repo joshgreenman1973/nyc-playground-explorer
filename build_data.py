@@ -28,11 +28,20 @@ NYC_COUNTIES = ["005", "047", "061", "081", "085"]  # Bronx, Kings, NY, Queens, 
 EQUIV_ID = "hm78-6dwm"  # 2020 census tracts -> 2020 NTA equivalency
 
 DCA_ID, ATH_ID, PROP_ID, NTA_ID = "j55h-3upk", "qnem-b8re", "enfh-gkve", "9nt8-h7nd"
+SCHOOL_ID = "bbtf-6p3c"   # Schoolyards to Playgrounds (public access out of school hours)
+NYCHA_ID = "phvi-damg"    # NYCHA public housing development boundaries
 BASE = "https://data.cityofnewyork.us/resource/{}.json"
 SQFT_PER_SQMI = 27_878_400.0
+DEDUP_DEG = 0.00065       # ~60 m: drop a playground this close to one already counted
+
+OVERPASS = "https://overpass-api.de/api/interpreter"
+OSM_CACHE = "data/osm_playgrounds_raw.json"
 
 BORO = {"M": "Manhattan", "B": "Brooklyn", "X": "Bronx",
-        "Q": "Queens", "R": "Staten Island"}
+        "Q": "Queens", "R": "Staten Island",
+        # NYCHA dataset uses full uppercase names
+        "MANHATTAN": "Manhattan", "BROOKLYN": "Brooklyn", "BRONX": "Bronx",
+        "QUEENS": "Queens", "STATEN ISLAND": "Staten Island"}
 
 COURT_SPORTS = [
     ("basketball", "Basketball"), ("handball", "Handball"),
@@ -64,6 +73,40 @@ def rings_latlng(geom, prec=5):
         if len(ring) >= 3:
             out.append(ring)
     return out or None
+
+
+def fetch_osm_playgrounds():
+    """All OSM leisure=playground points in the NYC bbox (node + way centroids).
+
+    Tries the live Overpass API; falls back to a cached raw file if present.
+    OpenStreetMap data, © OpenStreetMap contributors, ODbL.
+    """
+    q = ('[out:json][timeout:120];('
+         'node["leisure"="playground"](40.48,-74.28,40.93,-73.67);'
+         'way["leisure"="playground"](40.48,-74.28,40.93,-73.67);'
+         ');out center tags;')
+    data = None
+    try:
+        req = urllib.request.Request(
+            OVERPASS, data=urllib.parse.urlencode({"data": q}).encode(),
+            headers={"User-Agent": "nyc-playground-explorer/1.0 (josh.greenman@gmail.com)"})
+        with urllib.request.urlopen(req, timeout=180) as r:
+            data = json.load(r)
+        with open(OSM_CACHE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"  Overpass live fetch failed ({e}); trying cache {OSM_CACHE}")
+        if os.path.exists(OSM_CACHE):
+            data = json.load(open(OSM_CACHE))
+    if not data:
+        return []
+    out = []
+    for e in data.get("elements", []):
+        lat = e.get("lat") or (e.get("center") or {}).get("lat")
+        lon = e.get("lon") or (e.get("center") or {}).get("lon")
+        if lat and lon:
+            out.append((round(lat, 6), round(lon, 6), e.get("tags", {}).get("name", "")))
+    return out
 
 
 def child_pop_by_nta():
@@ -126,19 +169,93 @@ def build():
             parks[gid] = {"name": (row.get("signname") or row.get("name311") or "").strip(),
                           "loc": (row.get("location") or "").strip()}
 
-    # --- Playgrounds (children's play areas) ---
+    # --- Playgrounds from three public sources, deduped by proximity ---
+    # 1. NYC Parks children's play areas (authoritative; kept first)
+    pg_candidates = []
     for row in fetch(DCA_ID, {}):
         rings = rings_latlng(row.get("shape"))
         if not rings:
             continue
-        places.append({
-            "kind": "playground",
+        pg_candidates.append({
+            "src": "parks",
             "name": (row.get("publicname") or "Playground").strip(),
             "loc": (row.get("publiclocation") or "").strip(),
             "boro": BORO.get(row.get("borough", ""), row.get("borough", "")),
             "prop": row.get("gispropnum", ""),
-            "sports": [], "acc": None, "surface": "", "dim": "",
             "c": centroid_of(rings), "poly": rings,
+        })
+
+    # 2. Schoolyards to Playgrounds (DOE schoolyards open to the public)
+    for row in fetch(SCHOOL_ID, {}):
+        rings = rings_latlng(row.get("multipolygon"))
+        if not rings:
+            continue
+        pg_candidates.append({
+            "src": "school",
+            "name": "School playground",
+            "loc": (row.get("location") or row.get("address") or "").strip(),
+            "boro": BORO.get(row.get("borough", ""), row.get("borough", "")),
+            "prop": row.get("gispropnum", ""),
+            "c": centroid_of(rings), "poly": rings,
+        })
+
+    # 3. OSM playgrounds that fall on NYCHA development land
+    nycha_polys, nycha_boro = [], []
+    for row in fetch(NYCHA_ID, {}):
+        g = row.get("the_geom")
+        if not g:
+            continue
+        try:
+            nycha_polys.append(shape(g))
+            nycha_boro.append(BORO.get(row.get("borough", ""), row.get("borough", "")))
+        except Exception:
+            pass
+    nycha_tree = STRtree(nycha_polys) if nycha_polys else None
+    if nycha_tree:
+        for lat, lon, name in fetch_osm_playgrounds():
+            pt = Point(lon, lat)
+            for idx in nycha_tree.query(pt):
+                if nycha_polys[idx].contains(pt):
+                    pg_candidates.append({
+                        "src": "nycha",
+                        "name": name or "NYCHA playground",
+                        "loc": "", "boro": nycha_boro[idx], "prop": "",
+                        "c": [lat, lon], "poly": None,
+                    })
+                    break
+
+    # Dedup by ~60 m grid so the same playground from two sources counts once.
+    grid, kept = {}, []
+    def cell(lat, lon):
+        return (round(lat / DEDUP_DEG), round(lon / DEDUP_DEG))
+    for cand in pg_candidates:
+        lat, lon = cand["c"]
+        cx, cy = cell(lat, lon)
+        # NYC Parks DCAs are authoritative and always kept; only school/NYCHA
+        # candidates are dropped when they coincide with an already-kept playground.
+        if cand["src"] != "parks":
+            dup = False
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for (klat, klon) in grid.get((cx + dx, cy + dy), []):
+                        if abs(klat - lat) < DEDUP_DEG and abs(klon - lon) < DEDUP_DEG:
+                            dup = True
+                            break
+                    if dup:
+                        break
+                if dup:
+                    break
+            if dup:
+                continue
+        grid.setdefault((cx, cy), []).append((lat, lon))
+        kept.append(cand)
+
+    for cand in kept:
+        places.append({
+            "kind": "playground", "src": cand["src"],
+            "name": cand["name"], "loc": cand["loc"], "boro": cand["boro"],
+            "prop": cand["prop"], "sports": [], "acc": None, "surface": "", "dim": "",
+            "c": cand["c"], "poly": cand["poly"],
         })
 
     # --- Courts (active athletic facilities for our sports) ---
@@ -228,7 +345,12 @@ def build():
     # ---------- Report ----------
     pg = sum(1 for p in places if p["kind"] == "playground")
     ct = sum(1 for p in places if p["kind"] == "court")
-    print(f"Playgrounds: {pg}   Courts: {ct}   Total: {len(places)}")
+    by_src = {}
+    for p in places:
+        if p["kind"] == "playground":
+            by_src[p["src"]] = by_src.get(p["src"], 0) + 1
+    print(f"Playgrounds: {pg}  (" + ", ".join(f"{k}:{v}" for k, v in by_src.items())
+          + f")   Courts: {ct}   Total: {len(places)}")
     matched = sum(m["count"] for m in metas)
     print(f"Playgrounds matched to a neighborhood: {matched}/{pg}")
     ranking.sort(key=lambda r: r["per_sqmi"], reverse=True)

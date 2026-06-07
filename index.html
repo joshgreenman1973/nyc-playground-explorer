@@ -94,6 +94,14 @@
   footer.meta a{color:#6b6a5f}
 
   #map{flex:1;height:100%;background:#dfe7e3;position:relative}
+  #statstrip{position:absolute;top:0;left:0;right:0;z-index:700;display:flex;gap:0;overflow-x:auto;
+    background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);box-shadow:0 1px 6px rgba(0,0,0,.08);scrollbar-width:thin}
+  .stat-tile{flex:0 0 auto;padding:8px 16px;border-right:1px solid var(--line);min-width:130px}
+  .stat-tile .v{font-weight:700;font-size:15px;line-height:1.1;font-variant-numeric:tabular-nums}
+  .stat-tile .l{font-size:10.5px;color:#8a897c;margin-top:2px;line-height:1.25}
+  .stat-tile.hl .v{color:#08519c} .stat-tile.warn .v{color:#c0392b}
+  .leaflet-top.leaflet-left{margin-top:54px}
+  @media(max-width:760px){.leaflet-top.leaflet-left{margin-top:60px}}
   .leaflet-popup-content{margin:13px 15px;font-size:13.5px;line-height:1.5}
   .pop-title{font-weight:700;font-size:14.5px;margin-bottom:3px}
   .pop-loc{color:#6b6a5f;margin-bottom:7px}
@@ -189,16 +197,19 @@
     </div>
 
     <footer class="meta pad">
-      Data: NYC Parks, City Planning &amp; the 2020 U.S. Census via
-      <a href="https://data.cityofnewyork.us/d/j55h-3upk" target="_blank">Open Data</a>.
-      Counts treat each park as one site, so a playground with several courts is counted once.
-      Handball courts are New York City's racquetball-style courts. Children are residents under 18.
-      "Kids per playground" counts NYC Parks playgrounds only (not NYCHA, school or private play areas).
+      Playgrounds: NYC Parks (children's play areas), DOE
+      <a href="https://data.cityofnewyork.us/d/dbmp-698d" target="_blank">Schoolyards to Playgrounds</a>,
+      and playgrounds on <a href="https://data.cityofnewyork.us/d/phvi-damg" target="_blank">NYCHA</a> land
+      mapped by <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors (ODbL).
+      Courts &amp; neighborhoods: NYC Parks, City Planning &amp; the 2020 U.S. Census.
+      Each park is counted once, so a playground with several courts counts once.
+      Children are residents under 18. NYCHA coverage depends on OpenStreetMap and may be incomplete.
       Walk radius is ½ mile (≈10 min) or 1 mile (≈20 min) as the crow flies.
       Address search by <a href="https://geosearch.planninglabs.nyc" target="_blank">NYC Planning GeoSearch</a>.
     </footer>
   </div>
   <div id="map">
+    <div id="statstrip"></div>
     <div class="legend" id="legend"><h4 id="legendTitle"></h4><div id="legendBody"></div><div class="note" id="legendNote"></div></div>
     <div class="zoomhint" id="zoomhint">Zoom in to see actual court &amp; playground shapes</div>
   </div>
@@ -208,7 +219,9 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
 const CATS=[
-  {key:"playground",label:"Playgrounds (swings, slides, climbers)",color:"#2e9e5b"},
+  {key:"parks",label:"NYC Parks playgrounds",color:"#2e9e5b"},
+  {key:"school",label:"School playgrounds (public hours)",color:"#7cb342"},
+  {key:"nycha",label:"NYCHA playgrounds",color:"#0f8a72"},
   {key:"Basketball",label:"Basketball courts",color:"#e8722a"},
   {key:"Handball",label:"Handball courts",color:"#d8412f"},
   {key:"Tennis",label:"Tennis courts",color:"#1f9e94"},
@@ -217,6 +230,8 @@ const CATS=[
   {key:"Bocce",label:"Bocce courts",color:"#9a6b3f"},
 ];
 const COLOR=Object.fromEntries(CATS.map(c=>[c.key,c.color]));
+const PG_COLOR="#2e9e5b";
+const TAGLABEL={parks:"NYC Parks playground",school:"School playground",nycha:"NYCHA playground"};
 const BOROS=["Manhattan","Brooklyn","Queens","Bronx","Staten Island"];
 const POLY_ZOOM=15;
 const state={cats:new Set(CATS.map(c=>c.key)),boros:new Set(BOROS),accOnly:false,q:""};
@@ -231,19 +246,19 @@ const cluster=L.markerClusterGroup({maxClusterRadius:50,chunkedLoading:true,disa
 const polyLayer=L.layerGroup();
 const findLayer=L.layerGroup().addTo(map);
 
-function catOf(p){return p.kind==="playground"?"playground":(p.sports[0]||"Basketball");}
-function placeCats(p){return p.kind==="playground"?["playground"]:p.sports;}
+function catOf(p){return p.kind==="playground"?p.src:(p.sports[0]||"Basketball");}
+function placeCats(p){return p.kind==="playground"?[p.src]:p.sports;}
 function icon(c){const s=13;return L.divIcon({html:`<div class="marker-pin" style="width:${s}px;height:${s}px;background:${c}"></div>`,className:"",iconSize:[s,s],iconAnchor:[s/2,s/2]});}
 function gmaps(p){return `https://www.google.com/maps/dir/?api=1&destination=${p.c[0]},${p.c[1]}`;}
 
 function popupHtml(p){
-  const tags=placeCats(p).map(c=>`<span class="pop-tag" style="background:${COLOR[c]||'#888'}">${c==='playground'?'Playground':c}</span>`).join("");
+  const tags=placeCats(p).map(c=>`<span class="pop-tag" style="background:${COLOR[c]||'#888'}">${TAGLABEL[c]||c}</span>`).join("");
   const acc=p.acc?`<div class="pop-acc">♿ Wheelchair-accessible</div>`:"";
   const surf=p.surface?` · ${p.surface}`:"";
   return `<div class="pop-title">${p.name}</div>`+(p.loc?`<div class="pop-loc">${p.loc}${surf}</div>`:"")+`<div class="pop-tags">${tags}</div>`+acc+`<a class="pop-dir" href="${gmaps(p)}" target="_blank">Directions →</a>`;
 }
 function tipHtml(p){
-  const what=p.kind==="playground"?"Children's playground":p.sports.join(", ")+" court"+(p.sports.length>1?"s":"");
+  const what=p.kind==="playground"?(TAGLABEL[p.src]||"Playground"):p.sports.join(", ")+" court"+(p.sports.length>1?"s":"");
   const extra=p.kind==="court"&&p.surface?` · ${p.surface}`:"";
   return `<b>${p.name}</b><br><span class="t-sub">${what}${extra}${p.acc?" ♿":""}</span>`;
 }
@@ -276,10 +291,12 @@ function drawShapes(){
   for(const p of places){
     if(!passes(p)||!b.contains(p.c))continue;
     const col=COLOR[catOf(p)]||"#888";
-    const poly=L.polygon(p.poly,{color:col,weight:1.5,fillColor:col,fillOpacity:.55,pane:"markerPane"});
-    poly.bindTooltip(tipHtml(p),{className:"tip",sticky:true});
-    poly.bindPopup(()=>popupHtml(p),{maxWidth:260});
-    polyLayer.addLayer(poly);
+    // NYCHA playgrounds come from OSM points (no polygon) — draw a small circle
+    const shape=p.poly?L.polygon(p.poly,{color:col,weight:1.5,fillColor:col,fillOpacity:.55,pane:"markerPane"})
+      :L.circleMarker(p.c,{radius:7,color:"#fff",weight:1.5,fillColor:col,fillOpacity:.9,pane:"markerPane"});
+    shape.bindTooltip(tipHtml(p),{className:"tip",sticky:true});
+    shape.bindPopup(()=>popupHtml(p),{maxWidth:260});
+    polyLayer.addLayer(shape);
   }
 }
 function syncView(){
@@ -361,9 +378,32 @@ function applyMetric(){
   document.getElementById("densNote").textContent=m.note;
   document.querySelectorAll("#metricSeg button").forEach(b=>b.classList.toggle("on",b.dataset.m===curMetric));
 }
+function buildStrip(){
+  const res=ntaGeo.features.map(f=>f.properties).filter(p=>p.type==="0"&&p.area>=0.05);
+  const big=res.filter(p=>p.area>=0.2);
+  const densest=[...res].sort((a,b)=>b.per_sqmi-a.per_sqmi)[0];
+  const sparsest=[...big].filter(p=>p.kids>0&&p.count>0).sort((a,b)=>a.per_sqmi-b.per_sqmi)[0];
+  const stretched=[...res].filter(p=>p.count>0).sort((a,b)=>b.kids_per_pg-a.kids_per_pg)[0];
+  const none=res.filter(p=>p.count===0&&p.kids>0).sort((a,b)=>b.kids-a.kids);
+  const ratios=res.filter(p=>p.kids_per_pg!=null).map(p=>p.kids_per_pg).sort((a,b)=>a-b);
+  const med=ratios.length?ratios[Math.floor(ratios.length/2)]:0;
+  const tot={parks:0,school:0,nycha:0};
+  places.forEach(p=>{if(p.kind==="playground")tot[p.src]=(tot[p.src]||0)+1;});
+  const totAll=tot.parks+tot.school+tot.nycha;
+  const tiles=[
+    ["",`${totAll.toLocaleString()} public playgrounds`,`Parks ${tot.parks} · School ${tot.school} · NYCHA ${tot.nycha}`],
+    ["hl",`${densest.per_sqmi} / sq mi`,`Densest: ${densest.name}`],
+    ["",`${sparsest.per_sqmi} / sq mi`,`Sparsest (with kids): ${sparsest.name}`],
+    ["warn",`${stretched.kids_per_pg.toLocaleString()} kids/pg`,`Most stretched: ${stretched.name}`],
+    ["warn",`${none.length}`,`Neighborhoods with kids but no public playground${none[0]?` (e.g. ${none[0].name})`:""}`],
+    ["",`${med.toLocaleString()} kids/pg`,"Citywide median per playground"],
+  ];
+  document.getElementById("statstrip").innerHTML=tiles.map(([cls,v,l])=>
+    `<div class="stat-tile ${cls}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+}
 function loadDensity(){
   return fetch("data/neighborhoods.json").then(r=>r.json()).then(geo=>{
-    ntaGeo=geo;
+    ntaGeo=geo; buildStrip();
     ntaLayer=L.geoJSON(geo,{pane:"overlayPane",
       style:f=>({color:"#fff",weight:1,fillColor:"#eef3f8",fillOpacity:.62}),
       onEachFeature:(f,layer)=>layer.bindTooltip("",{className:"nta-tip",sticky:true})});
@@ -429,7 +469,7 @@ function showNearby(lat,lon,label){
   // list: playground sites first, then court-only sites
   const ordered=arr.filter(s=>s.pg).concat(arr.filter(s=>!s.pg));
   const list=ordered.slice(0,12).map(s=>{
-    const col=s.pg?COLOR.playground:"#e8722a";
+    const col=s.pg?PG_COLOR:"#e8722a";
     const tag=s.pg?(s.ct?" · + courts":""):" · courts";
     return `<li data-lat="${s.lat}" data-lon="${s.lon}"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>${s.name}${tag}</span><span class="d">${s.d.toFixed(2)} mi</span></li>`;
   }).join("");

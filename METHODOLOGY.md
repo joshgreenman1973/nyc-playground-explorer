@@ -11,7 +11,9 @@ published on the NYC Open Data portal. Two datasets are combined.
 
 | Layer | Dataset | ID | Records used |
 |-------|---------|----|----|
-| Children's playgrounds | [Playgrounds with Dedicated Children's Areas (DCAs)](https://data.cityofnewyork.us/d/j55h-3upk) | `j55h-3upk` | 1,010 |
+| NYC Parks playgrounds | [Playgrounds with Dedicated Children's Areas (DCAs)](https://data.cityofnewyork.us/d/j55h-3upk) | `j55h-3upk` | 1,010 |
+| School playgrounds | [Schoolyards to Playgrounds](https://data.cityofnewyork.us/d/dbmp-698d) | `bbtf-6p3c` | 294 |
+| NYCHA playgrounds | [OpenStreetMap](https://www.openstreetmap.org/copyright) ∩ [NYCHA Developments](https://data.cityofnewyork.us/d/phvi-damg) | `phvi-damg` | 122 |
 | Courts | [Athletic Facilities](https://data.cityofnewyork.us/d/qnem-b8re) | `qnem-b8re` | 4,072 |
 | Park names & cross streets | [Parks Properties](https://data.cityofnewyork.us/d/enfh-gkve) | `enfh-gkve` | join key |
 | Neighborhood boundaries & area | [2020 Neighborhood Tabulation Areas](https://data.cityofnewyork.us/d/9nt8-h7nd) | `9nt8-h7nd` | 262 NTAs |
@@ -23,15 +25,30 @@ refreshed by DPR (last updated May 2026 at time of build).
 
 ## What counts as a "playground"
 
-NYC Parks deliberately distinguishes a **Dedicated Children's Area (DCA)** from
-a "playground." In their words, the term playground is avoided because a
-property labeled "playground" may actually contain only adult fitness equipment
-or handball/basketball courts and no children's play equipment at all.
+Playgrounds are drawn from **three public sources**, colour-coded on the map and
+toggleable separately. Together they total **1,426** public playgrounds.
 
-A DCA is a space with **play equipment specifically designed for children** —
-play structures, climbers, slides, swings and spray showers. That is exactly
-the "swingsets, slides and jungle gyms" the map is meant to show, so the DCA
-layer is the playground layer here. There were 1,010 active DCAs.
+**1. NYC Parks playgrounds (1,010).** NYC Parks deliberately distinguishes a
+**Dedicated Children's Area (DCA)** from a "playground," because a property
+labeled "playground" may actually contain only fitness equipment or courts. A
+DCA is a space with **play equipment designed for children** — structures,
+climbers, slides, swings, spray showers. This is the authoritative layer and is
+never de-duplicated.
+
+**2. School playgrounds open to the public (294).** From the
+**Schoolyards to Playgrounds** program, which opens DOE schoolyards to the
+public outside school hours (evenings, weekends, holidays). Mapped polygons.
+
+**3. NYCHA playgrounds (122).** New York City has **no published inventory** of
+NYCHA playgrounds. As the best available proxy, we take every
+`leisure=playground` feature mapped by **OpenStreetMap** contributors and keep
+those whose location falls **inside a NYCHA development boundary**
+(`phvi-damg`). These render as small circles rather than polygons because OSM
+gives a point, not a footprint.
+
+**De-duplication.** School and NYCHA candidates are dropped when they sit within
+~60 m of a playground already counted, so a site that appears in more than one
+source is counted once. Parks DCAs are always kept.
 
 ## What counts as a "court"
 
@@ -108,14 +125,13 @@ switches between three metrics so you can **compare playground supply to where
 the children actually are**:
 
 **1. Playgrounds per square mile** — spatial density.
-- Each of the 1,010 children's playgrounds is assigned to the NTA that
-  geometrically contains its centroid (point-in-polygon, Shapely). All 1,010
-  matched.
+- All 1,426 playgrounds (Parks + school + NYCHA) are assigned to the NTA that
+  geometrically contains their centroid (point-in-polygon, Shapely).
 - NTA land area comes from its `shape_area` field (square feet, NYC State Plane)
   ÷ 27,878,400 = square miles.
-- Density = playgrounds ÷ square miles. Densest: Lower East Side, Upper Manhattan
-  and the South Bronx (15–22/sq mi); sparsest: low-rise Staten Island and
-  eastern Queens.
+- Density = playgrounds ÷ square miles. Densest: Chinatown–Two Bridges (≈46/sq
+  mi), the Lower East Side and East Harlem; sparsest: low-rise Staten Island and
+  outer Queens.
 
 **2. Children per square mile** — where kids live.
 - Children = residents **under 18** from the 2020 Census (PL 94-171): total
@@ -127,22 +143,35 @@ the children actually are**:
 - Density = children ÷ square miles.
 
 **3. Children per playground** — the supply-vs-demand comparison.
-- Children in an NTA ÷ NYC Parks playgrounds in that NTA. Higher means each
-  playground has to serve more kids. Neighborhoods that have children but **zero**
-  NYC Parks playgrounds are flagged in the darkest colour.
-- The most stretched residential neighborhoods are **Borough Park** (≈40,000
-  children, 2 Parks playgrounds → ~20,000 kids each), Midwood, the Upper East
-  Side, Kensington and West Flatbush–Ditmas Park.
-- **Important caveat:** this counts **NYC Parks playgrounds only.** Several of
-  the most "stretched" neighborhoods (Borough Park, Co-op City, parts of East
-  Flatbush) rely heavily on play areas run by NYCHA, public schools, or private
-  and religious institutions, which are not in the Parks data. A high ratio
-  signals "few *public-park* playgrounds per child," not necessarily "few
-  playgrounds." Treat it as a starting question, not a verdict.
+- Children in an NTA ÷ all public playgrounds (Parks + school + NYCHA) in that
+  NTA. Higher means each playground serves more kids. Neighborhoods that have
+  children but **zero** public playgrounds are flagged in the darkest colour.
+- Adding school and NYCHA playgrounds materially changes the picture. Borough
+  Park, which looked extreme on Parks data alone (≈40,000 children, 2 Parks
+  playgrounds), has 8 public playgrounds once schoolyards and NYCHA are
+  included — ~5,000 kids each. The most stretched residential neighborhoods are
+  now the **Upper East Side–Carnegie Hill**, **North Corona**, **Central
+  Astoria** and **Tribeca**.
+- **Caveat — NYCHA coverage is OpenStreetMap-dependent.** Because there is no
+  official NYCHA playground dataset, the NYCHA layer is only as complete as
+  OpenStreetMap's mapping of those developments. Some real NYCHA play areas are
+  missing (e.g. Co-op City — actually a Mitchell-Lama, not NYCHA — still shows
+  zero), and private, religious-school and other play areas remain out of scope
+  entirely. A high ratio signals "few *mapped public* playgrounds per child," a
+  starting question rather than a verdict.
 
 All three sidebar rankings are restricted to **residential NTAs** (type `0`),
 excluding park, cemetery, airport and other non-residential tabulation areas
 whose figures are not meaningful.
+
+## The statistics strip
+
+The strip across the top of the map summarises the analysis at a glance: total
+public playgrounds (with the Parks / school / NYCHA split), the densest and
+sparsest (non-zero) residential neighborhoods, the most "stretched" neighborhood
+by children per playground, how many residential neighborhoods have children but
+no mapped public playground, and the citywide **median** of ~1,500 children per
+playground. All figures use the residential-NTA set described above.
 
 ## "Parks within a 10-minute walk"
 
@@ -166,10 +195,10 @@ catchment is somewhat smaller. Distances shown are straight-line.
 
 ## Known limitations
 
-- **Coverage is NYC Parks only.** Playgrounds and courts inside NYCHA
-  developments, on school grounds (unless joined to Parks via Schoolyards to
-  Playgrounds), in private developments, or run by other agencies are not in
-  these datasets and will not appear.
+- **Playground coverage** now spans NYC Parks, public schoolyards and (via
+  OpenStreetMap) NYCHA developments, but is still not exhaustive: private,
+  religious-school, BID/POPS and some unmapped NYCHA play areas do not appear.
+  **Court** coverage remains NYC Parks only.
 - **No equipment-level detail.** The DCA layer confirms a children's play area
   exists but does not enumerate individual swings vs. slides vs. climbers. That
   granularity lives in the Parks Inspection Program feed and is not used here.

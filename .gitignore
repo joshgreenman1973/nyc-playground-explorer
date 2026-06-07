@@ -1,2 +1,6 @@
 .DS_Store
 __pycache__/
+
+.DS_Store
+__pycache__/
+data/osm_playgrounds_raw.json

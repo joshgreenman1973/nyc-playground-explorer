@@ -9,7 +9,11 @@ bocce courts.
 
 ## Features
 
-- 5,081 places across all five boroughs, clustered for fast browsing
+- ~5,500 places across all five boroughs, clustered for fast browsing
+- **Playgrounds from three public sources** — NYC Parks, public schoolyards
+  (Schoolyards to Playgrounds) and NYCHA developments (via OpenStreetMap)
+- **A statistics strip** summarizing densest / sparsest neighborhoods, the most
+  "stretched" by children per playground, and citywide medians
 - **Actual facility shapes** — zoom in and every court / play area is drawn as
   its real mapped polygon, not a dot
 - **Hover tooltips** with name, type, surface and accessibility
