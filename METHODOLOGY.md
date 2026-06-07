@@ -148,16 +148,21 @@ the children actually are**:
   **1,740,142 children**.
 - Density = children ÷ square miles.
 
-**3. Children per playground** — the supply-vs-demand comparison.
+**3. Children per playground** — children divided by playgrounds.
 - Children in an NTA ÷ all public playgrounds (Parks + school + NYCHA) in that
-  NTA. Higher means each playground serves more kids. Neighborhoods that have
-  children but **zero** public playgrounds are flagged in the darkest colour.
+  NTA. Neighborhoods that have children but **zero** public playgrounds are
+  flagged in the darkest colour.
+- **This ratio is reported as a plain number, not a judgment.** A high
+  children-per-playground figure has *two* readings and the map does not pick
+  one: it can mean a neighborhood is under-supplied with playgrounds, *or* that
+  its few playgrounds are heavily used. Treat it as a question to investigate,
+  not a verdict.
 - Adding school and NYCHA playgrounds materially changes the picture. Borough
   Park, which looked extreme on Parks data alone (≈40,000 children, 2 Parks
   playgrounds), has 8 public playgrounds once schoolyards and NYCHA are
-  included — ~5,000 kids each. The most stretched residential neighborhoods are
-  now the **Upper East Side–Carnegie Hill**, **North Corona**, **Central
-  Astoria** and **Tribeca**.
+  included — ~5,000 kids each. The neighborhoods with the most children per
+  playground are the **Upper East Side–Carnegie Hill**, **North Corona**,
+  **Central Astoria** and **Tribeca**.
 - **Caveat — NYCHA coverage is OpenStreetMap-dependent.** Because there is no
   official NYCHA playground dataset, the NYCHA layer is only as complete as
   OpenStreetMap's mapping of those developments. Some real NYCHA play areas are
@@ -172,7 +177,7 @@ neighborhood is sorted into low/medium/high **tertiles** on each variable
 (thresholds computed from the residential-NTA distribution), and the two classes
 pick a color:
 
-- **Teal** = many children, few playgrounds (the underserved corner)
+- **Teal** = many children, few playgrounds
 - **Magenta** = many playgrounds, few children
 - **Dark blue** = lots of both
 - **Grey** = few of either
@@ -244,8 +249,8 @@ not "inaccessible." Lit courts (for evening play) are flagged from the
 
 The strip across the top of the map summarises the analysis at a glance: total
 public playgrounds (with the Parks / school / NYCHA split), the densest and
-sparsest (non-zero) residential neighborhoods, the most "stretched" neighborhood
-by children per playground, how many residential neighborhoods have children but
+sparsest (non-zero) residential neighborhoods, the neighborhood with the most
+children per playground, how many residential neighborhoods have children but
 no mapped public playground, and the citywide **median** of ~1,500 children per
 playground. All figures use the residential-NTA set described above.
 

@@ -521,7 +521,7 @@ def build():
         print(f"\nTotal children (under 18) citywide: {total_kids:,}")
         served = [r for r in ranking if r["kids_per_pg"] is not None]
         served.sort(key=lambda r: r["kids_per_pg"], reverse=True)
-        print("Most children PER playground (most stretched):")
+        print("Most children per playground:")
         for r in served[:10]:
             print(f"  {r['kids_per_pg']:6,} kids/pg  {r['name']} ({r['boro']}) — {r['kids']:,} kids, {r['count']} pg")
         ks = sorted(r["kids_sqmi"] for r in ranking)

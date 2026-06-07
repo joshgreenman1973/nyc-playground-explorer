@@ -230,6 +230,7 @@
         <div class="addr-list" id="addrList"></div>
       </div>
       <div class="seg" id="walkSeg">
+        <button data-mi="0.25">5-min walk</button>
         <button data-mi="0.5" class="on">10-min walk</button>
         <button data-mi="1.0">20-min walk</button>
       </div>
@@ -507,7 +508,7 @@ const METRICS={
     rankVal:p=>p.kids_sqmi, rankFmt:p=>p.kids_sqmi.toLocaleString()
   },
   ratio:{
-    title:"Children per playground", rankTitle:"Most children per playground (most stretched)",
+    title:"Children per playground", rankTitle:"Most children per playground",
     colorOf:p=> p.count===0 ? (p.kids>0?'#67000d':'#f1efea') : bucket(p.kids_per_pg,[[8000,'#a50f15'],[4000,'#de2d26'],[2000,'#fb6a4a'],[1000,'#fc9272'],[0,'#fee0d2']]),
     fmt:p=> p.count===0 ? (p.kids>0?`${p.kids.toLocaleString()} kids · <b>no public playground</b>`:"No children / no playground")
             : `${p.kids_per_pg.toLocaleString()} children per playground<br>${p.kids.toLocaleString()} kids · ${p.count} playground${p.count===1?"":"s"}`,
@@ -549,7 +550,7 @@ function buildStrip(){
   const big=res.filter(p=>p.area>=0.2);
   const densest=[...res].sort((a,b)=>b.per_sqmi-a.per_sqmi)[0];
   const sparsest=[...big].filter(p=>p.kids>0&&p.count>0).sort((a,b)=>a.per_sqmi-b.per_sqmi)[0];
-  const stretched=[...res].filter(p=>p.count>0).sort((a,b)=>b.kids_per_pg-a.kids_per_pg)[0];
+  const topRatio=[...res].filter(p=>p.count>0).sort((a,b)=>b.kids_per_pg-a.kids_per_pg)[0];
   const none=res.filter(p=>p.count===0&&p.kids>0).sort((a,b)=>b.kids-a.kids);
   const ratios=res.filter(p=>p.kids_per_pg!=null).map(p=>p.kids_per_pg).sort((a,b)=>a-b);
   const med=ratios.length?ratios[Math.floor(ratios.length/2)]:0;
@@ -564,7 +565,7 @@ function buildStrip(){
     ["good",`${accPg.toLocaleString()} ♿`,"Accessible playgrounds"],
     ["hl",`${densest.per_sqmi}`,`Densest: ${densest.name} (/sq mi)`],
     ["",`${sparsest.per_sqmi}`,`Sparsest with kids: ${sparsest.name} (/sq mi)`],
-    ["warn",`${stretched.kids_per_pg.toLocaleString()}`,`Most stretched: ${stretched.name} (kids/pg)`],
+    ["",`${topRatio.kids_per_pg.toLocaleString()}`,`Most children per playground: ${topRatio.name}`],
     ["warn",`${none.length}`,`Neighborhoods: kids, no public playground${none[0]?` (e.g. ${none[0].name})`:""}`],
     ["",`${med.toLocaleString()}`,"Citywide median kids per playground"],
     ["",`${pctA}%`,"Acceptable condition (2025–26)"],
@@ -614,7 +615,7 @@ const isoCache={};
 async function fetchIso(lat,lon){
   const k=lat.toFixed(5)+","+lon.toFixed(5);
   if(k in isoCache) return isoCache[k];
-  const q={locations:[{lat,lon}],costing:"pedestrian",contours:[{time:10},{time:20}],polygons:true};
+  const q={locations:[{lat,lon}],costing:"pedestrian",contours:[{time:5},{time:10},{time:20}],polygons:true};
   try{
     const r=await fetch("https://valhalla1.openstreetmap.de/isochrone?json="+encodeURIComponent(JSON.stringify(q)));
     if(!r.ok) throw 0;
@@ -638,7 +639,7 @@ async function showNearby(lat,lon,label){
   lastLoc={lat,lon,label};
   findLayer.clearLayers();
   L.marker([lat,lon],{icon:L.divIcon({className:"",iconSize:[18,18],iconAnchor:[9,9],html:BLUE_DOT})}).addTo(findLayer);
-  const mins=walkMi<=0.5?10:20;
+  const mins=Math.round(walkMi*20);
   const box=document.getElementById("nearby");
   box.classList.add("show");
   box.innerHTML=`<div class="hd">Measuring a <b>${mins}-minute walk</b> along the street network…</div>`;
