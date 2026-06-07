@@ -15,10 +15,17 @@ Sources (NYC Open Data, Dept. of Parks & Recreation + City Planning):
 """
 
 import json
+import os
 import urllib.request
 import urllib.parse
 from shapely.geometry import shape, Point, mapping
 from shapely.strtree import STRtree
+
+# Census API key (free). Read from env so it never lands in the public repo.
+#   export CENSUS_API_KEY=...   then run.  Without it, child-density is skipped.
+CENSUS_KEY = os.environ.get("CENSUS_API_KEY", "")
+NYC_COUNTIES = ["005", "047", "061", "081", "085"]  # Bronx, Kings, NY, Queens, Richmond
+EQUIV_ID = "hm78-6dwm"  # 2020 census tracts -> 2020 NTA equivalency
 
 DCA_ID, ATH_ID, PROP_ID, NTA_ID = "j55h-3upk", "qnem-b8re", "enfh-gkve", "9nt8-h7nd"
 BASE = "https://data.cityofnewyork.us/resource/{}.json"
@@ -57,6 +64,40 @@ def rings_latlng(geom, prec=5):
         if len(ring) >= 3:
             out.append(ring)
     return out or None
+
+
+def child_pop_by_nta():
+    """Return {nta2020_code: {'pop': total, 'kids': under18}} from 2020 Census.
+
+    under-18 = P1_001N (total) - P3_001N (18 and over), summed over the census
+    tracts that make up each NTA (tracts nest cleanly inside 2020 NTAs).
+    """
+    if not CENSUS_KEY:
+        print("WARNING: CENSUS_API_KEY not set — skipping child-density layer.")
+        return {}
+    # tract -> nta lookup
+    tract_nta = {}
+    for row in fetch(EQUIV_ID, {"$select": "geoid,ntacode"}):
+        if row.get("geoid") and row.get("ntacode"):
+            tract_nta[row["geoid"]] = row["ntacode"]
+    # census population by tract
+    out = {}
+    for county in NYC_COUNTIES:
+        url = ("https://api.census.gov/data/2020/dec/pl?get=P1_001N,P3_001N"
+               f"&for=tract:*&in=state:36&in=county:{county}&key={CENSUS_KEY}")
+        req = urllib.request.Request(url, headers={"User-Agent": "nyc-playground-explorer"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            rows = json.load(r)
+        for tot, adult, state, cty, tract in rows[1:]:
+            geoid = state + cty + tract
+            nta = tract_nta.get(geoid)
+            if not nta:
+                continue
+            kids = int(tot) - int(adult)
+            d = out.setdefault(nta, {"pop": 0, "kids": 0})
+            d["pop"] += int(tot)
+            d["kids"] += kids
+    return out
 
 
 def round_geojson(geom, prec=5):
@@ -127,7 +168,8 @@ def build():
     with open("data/places.json", "w") as f:
         json.dump(places, f, separators=(",", ":"))
 
-    # ---------- Neighborhood density (playgrounds per square mile) ----------
+    # ---------- Neighborhood density ----------
+    kids_by_nta = child_pop_by_nta()
     nta_rows = fetch(NTA_ID, {})
     geoms, metas = [], []
     for row in nta_rows:
@@ -145,12 +187,15 @@ def build():
             area_sqmi = 0.0
         # simplify for the web (~15m tolerance) and round coordinates
         simplified = round_geojson(mapping(poly.simplify(0.00015, preserve_topology=True)))
+        cp = kids_by_nta.get(row.get("nta2020"), {})
         metas.append({
             "name": row.get("ntaname", ""),
             "boro": row.get("boroname", ""),
             "type": row.get("ntatype", ""),     # 0 = residential; non-0 = parks/cemeteries/etc
             "area": round(area_sqmi, 4),
             "count": 0,
+            "pop": cp.get("pop", 0),
+            "kids": cp.get("kids", 0),
             "geom_geojson": simplified,
         })
 
@@ -165,8 +210,12 @@ def build():
     features, ranking = [], []
     for m in metas:
         per_sqmi = round(m["count"] / m["area"], 2) if m["area"] > 0 else 0.0
+        kids_sqmi = round(m["kids"] / m["area"]) if m["area"] > 0 else 0
+        kids_per_pg = round(m["kids"] / m["count"]) if m["count"] > 0 else None
         props = {"name": m["name"], "boro": m["boro"], "type": m["type"],
-                 "count": m["count"], "area": m["area"], "per_sqmi": per_sqmi}
+                 "count": m["count"], "area": m["area"], "per_sqmi": per_sqmi,
+                 "kids": m["kids"], "pop": m["pop"],
+                 "kids_sqmi": kids_sqmi, "kids_per_pg": kids_per_pg}
         features.append({"type": "Feature", "properties": props, "geometry": m["geom_geojson"]})
         # rank residential NTAs only (type "0") with non-trivial area
         if m["type"] == "0" and m["area"] >= 0.05:
@@ -191,6 +240,17 @@ def build():
     big.sort(key=lambda r: r["per_sqmi"])
     for r in big[:10]:
         print(f"  {r['per_sqmi']:5.1f}  {r['name']} ({r['boro']}) — {r['count']} in {r['area']:.2f} sq mi")
+
+    if kids_by_nta:
+        total_kids = sum(m["kids"] for m in metas)
+        print(f"\nTotal children (under 18) citywide: {total_kids:,}")
+        served = [r for r in ranking if r["kids_per_pg"] is not None]
+        served.sort(key=lambda r: r["kids_per_pg"], reverse=True)
+        print("Most children PER playground (most stretched):")
+        for r in served[:10]:
+            print(f"  {r['kids_per_pg']:6,} kids/pg  {r['name']} ({r['boro']}) — {r['kids']:,} kids, {r['count']} pg")
+        ks = sorted(r["kids_sqmi"] for r in ranking)
+        print("kids/sq mi percentiles:", [ks[int(p*len(ks))] for p in (.2,.4,.6,.8,.95)])
 
 
 if __name__ == "__main__":

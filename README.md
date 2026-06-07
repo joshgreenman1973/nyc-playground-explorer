@@ -13,10 +13,12 @@ bocce courts.
 - **Actual facility shapes** — zoom in and every court / play area is drawn as
   its real mapped polygon, not a dot
 - **Hover tooltips** with name, type, surface and accessibility
-- **Playground density by neighborhood** choropleth (playgrounds per square mile
-  across 262 neighborhoods) with a live ranking
-- **Address autocomplete** (free NYC GeoSearch) that counts every playground and
-  court within a 10-minute (½-mile) walk
+- **Neighborhood density** choropleth with three comparable metrics — playgrounds
+  per square mile, children per square mile, and **children per playground** —
+  across 262 neighborhoods, each with a live ranking
+- **Address autocomplete** (free NYC GeoSearch) that counts the playgrounds and
+  parks within a **10- or 20-minute walk**; each park is counted once even if it
+  holds many courts
 - Filter by amenity type, borough, and wheelchair accessibility
 - "Use my location" geolocation and one-tap Google Maps directions
 
