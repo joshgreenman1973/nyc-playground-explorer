@@ -1,138 +1,196 @@
 #!/usr/bin/env python3
 """
-Build the data bundle for the NYC Playground & Court Explorer.
+Build data for the NYC Playground & Court Explorer.
 
-Sources (NYC Open Data, Dept. of Parks & Recreation):
-  - Playgrounds with Dedicated Children's Areas (DCAs): j55h-3upk
-      Spaces with play equipment designed for children (play structures /
-      climbers / slides / swings, plus spray showers). NYC Parks' own
-      authoritative "where are the kid playgrounds" layer.
-  - Athletic Facilities: qnem-b8re
-      Every permitable / designated sports facility, with per-sport flags
-      (basketball, handball, tennis, pickleball, volleyball, bocce, ...).
+Outputs
+  data/places.json         -- every playground + court, with real polygon shapes,
+                              centroid, park id, and all available detail fields.
+  data/neighborhoods.json  -- 2020 NTA polygons with playground counts + density.
 
-Output: data/places.json  -- one compact record per place.
+Sources (NYC Open Data, Dept. of Parks & Recreation + City Planning):
+  j55h-3upk  Playgrounds with Dedicated Children's Areas (DCAs)
+  qnem-b8re  Athletic Facilities (per-sport flags)
+  enfh-gkve  Parks Properties (park name + cross streets, joined on gispropnum)
+  9nt8-h7nd  2020 Neighborhood Tabulation Areas (boundaries + area)
 """
 
 import json
 import urllib.request
 import urllib.parse
+from shapely.geometry import shape, Point, mapping
+from shapely.strtree import STRtree
 
-DCA_ID = "j55h-3upk"
-ATH_ID = "qnem-b8re"
-PROP_ID = "enfh-gkve"  # Parks Properties -> park name + cross streets by gispropnum
+DCA_ID, ATH_ID, PROP_ID, NTA_ID = "j55h-3upk", "qnem-b8re", "enfh-gkve", "9nt8-h7nd"
 BASE = "https://data.cityofnewyork.us/resource/{}.json"
+SQFT_PER_SQMI = 27_878_400.0
 
 BORO = {"M": "Manhattan", "B": "Brooklyn", "X": "Bronx",
         "Q": "Queens", "R": "Staten Island"}
 
-# Court sports we surface (hard courts / "things to play on"), label + key.
 COURT_SPORTS = [
-    ("basketball", "Basketball"),
-    ("handball", "Handball"),
-    ("tennis", "Tennis"),
-    ("pickleball", "Pickleball"),
-    ("volleyball", "Volleyball"),
-    ("bocce", "Bocce"),
+    ("basketball", "Basketball"), ("handball", "Handball"),
+    ("tennis", "Tennis"), ("pickleball", "Pickleball"),
+    ("volleyball", "Volleyball"), ("bocce", "Bocce"),
 ]
 
 
 def fetch(dataset_id, params):
     params = dict(params)
-    params["$limit"] = 50000
+    params["$limit"] = 60000
     url = BASE.format(dataset_id) + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"User-Agent": "nyc-playground-explorer"})
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=180) as r:
         return json.load(r)
 
 
-def centroid(geom):
-    """Approximate centroid: mean of the outer-ring vertices across polygons."""
+def rings_latlng(geom, prec=5):
+    """Exterior rings as [[lat,lng],...] lists (one per polygon part). Compact."""
     if not geom:
         return None
-    xs, ys = [], []
+    out = []
     coords = geom.get("coordinates", [])
-    gtype = geom.get("type")
-    polys = coords if gtype == "MultiPolygon" else [coords]
+    polys = coords if geom.get("type") == "MultiPolygon" else [coords]
     for poly in polys:
         if not poly:
             continue
-        ring = poly[0]  # exterior ring
-        for x, y in ring:
-            xs.append(x)
-            ys.append(y)
-    if not xs:
-        return None
+        ring = [[round(y, prec), round(x, prec)] for x, y in poly[0]]
+        if len(ring) >= 3:
+            out.append(ring)
+    return out or None
+
+
+def round_geojson(geom, prec=5):
+    """Recursively round all coordinates in a GeoJSON geometry dict."""
+    def r(c):
+        if isinstance(c, (int, float)):
+            return round(c, prec)
+        return [r(x) for x in c]
+    return {"type": geom["type"], "coordinates": r(geom["coordinates"])}
+
+
+def centroid_of(rings):
+    xs = [pt[1] for r in rings for pt in r]
+    ys = [pt[0] for r in rings for pt in r]
     return [round(sum(ys) / len(ys), 6), round(sum(xs) / len(xs), 6)]
 
 
 def build():
     places = []
 
-    # --- Playgrounds (children's play equipment) ---
-    dca = fetch(DCA_ID, {})
-    for row in dca:
-        c = centroid(row.get("shape"))
-        if not c:
-            continue
-        places.append({
-            "lat": c[0], "lon": c[1],
-            "name": row.get("publicname", "Playground").strip(),
-            "loc": (row.get("publiclocation") or "").strip(),
-            "boro": BORO.get(row.get("borough", ""), row.get("borough", "")),
-            "kind": "playground",
-            "sports": [],
-            "acc": False,
-        })
-
-    # --- Park name + location lookup (joined by gispropnum) ---
+    # --- Park name + cross-street lookup ---
     parks = {}
     for row in fetch(PROP_ID, {"$select": "gispropnum,signname,location,name311"}):
         gid = row.get("gispropnum")
         if gid:
-            parks[gid] = {
-                "name": (row.get("signname") or row.get("name311") or "").strip(),
-                "loc": (row.get("location") or "").strip(),
-            }
+            parks[gid] = {"name": (row.get("signname") or row.get("name311") or "").strip(),
+                          "loc": (row.get("location") or "").strip()}
 
-    # --- Athletic courts ---
+    # --- Playgrounds (children's play areas) ---
+    for row in fetch(DCA_ID, {}):
+        rings = rings_latlng(row.get("shape"))
+        if not rings:
+            continue
+        places.append({
+            "kind": "playground",
+            "name": (row.get("publicname") or "Playground").strip(),
+            "loc": (row.get("publiclocation") or "").strip(),
+            "boro": BORO.get(row.get("borough", ""), row.get("borough", "")),
+            "prop": row.get("gispropnum", ""),
+            "sports": [], "acc": None, "surface": "", "dim": "",
+            "c": centroid_of(rings), "poly": rings,
+        })
+
+    # --- Courts (active athletic facilities for our sports) ---
     where = ("featurestatus='Active' AND ("
              + " OR ".join(f"{k}=true" for k, _ in COURT_SPORTS) + ")")
-    ath = fetch(ATH_ID, {"$where": where})
-    for row in ath:
-        c = centroid(row.get("multipolygon"))
-        if not c:
+    for row in fetch(ATH_ID, {"$where": where}):
+        rings = rings_latlng(row.get("multipolygon"))
+        if not rings:
             continue
-        sports = [label for key, label in COURT_SPORTS
-                  if str(row.get(key)).lower() == "true"]
+        sports = [lab for key, lab in COURT_SPORTS if str(row.get(key)).lower() == "true"]
         if not sports:
             continue
         park = parks.get(row.get("gispropnum"), {})
-        name = park.get("name") or (sports[0] + " courts")
         places.append({
-            "lat": c[0], "lon": c[1],
-            "name": name,
+            "kind": "court",
+            "name": park.get("name") or (sports[0] + " courts"),
             "loc": park.get("loc", ""),
             "boro": BORO.get(row.get("borough", ""), row.get("borough", "")),
-            "kind": "court",
+            "prop": row.get("gispropnum", ""),
             "sports": sports,
             "acc": str(row.get("accessible")).lower() == "true",
             "surface": (row.get("surface_type") or "").strip(),
             "dim": (row.get("dimensions") or "").strip(),
+            "c": centroid_of(rings), "poly": rings,
         })
 
     with open("data/places.json", "w") as f:
         json.dump(places, f, separators=(",", ":"))
 
-    # Summary
+    # ---------- Neighborhood density (playgrounds per square mile) ----------
+    nta_rows = fetch(NTA_ID, {})
+    geoms, metas = [], []
+    for row in nta_rows:
+        g = row.get("the_geom")
+        if not g:
+            continue
+        try:
+            poly = shape(g)
+        except Exception:
+            continue
+        geoms.append(poly)
+        try:
+            area_sqmi = float(row.get("shape_area", 0)) / SQFT_PER_SQMI
+        except (TypeError, ValueError):
+            area_sqmi = 0.0
+        # simplify for the web (~15m tolerance) and round coordinates
+        simplified = round_geojson(mapping(poly.simplify(0.00015, preserve_topology=True)))
+        metas.append({
+            "name": row.get("ntaname", ""),
+            "boro": row.get("boroname", ""),
+            "type": row.get("ntatype", ""),     # 0 = residential; non-0 = parks/cemeteries/etc
+            "area": round(area_sqmi, 4),
+            "count": 0,
+            "geom_geojson": simplified,
+        })
+
+    tree = STRtree(geoms)
+    pg_pts = [Point(p["c"][1], p["c"][0]) for p in places if p["kind"] == "playground"]
+    for pt in pg_pts:
+        for idx in tree.query(pt):
+            if geoms[idx].contains(pt):
+                metas[idx]["count"] += 1
+                break
+
+    features, ranking = [], []
+    for m in metas:
+        per_sqmi = round(m["count"] / m["area"], 2) if m["area"] > 0 else 0.0
+        props = {"name": m["name"], "boro": m["boro"], "type": m["type"],
+                 "count": m["count"], "area": m["area"], "per_sqmi": per_sqmi}
+        features.append({"type": "Feature", "properties": props, "geometry": m["geom_geojson"]})
+        # rank residential NTAs only (type "0") with non-trivial area
+        if m["type"] == "0" and m["area"] >= 0.05:
+            ranking.append(props)
+
+    with open("data/neighborhoods.json", "w") as f:
+        json.dump({"type": "FeatureCollection", "features": features},
+                  f, separators=(",", ":"))
+
+    # ---------- Report ----------
     pg = sum(1 for p in places if p["kind"] == "playground")
     ct = sum(1 for p in places if p["kind"] == "court")
-    print(f"Playgrounds: {pg}")
-    print(f"Courts: {ct}")
-    for key, label in COURT_SPORTS:
-        n = sum(1 for p in places if label in p["sports"])
-        print(f"  {label}: {n}")
-    print(f"Total places: {len(places)}")
+    print(f"Playgrounds: {pg}   Courts: {ct}   Total: {len(places)}")
+    matched = sum(m["count"] for m in metas)
+    print(f"Playgrounds matched to a neighborhood: {matched}/{pg}")
+    ranking.sort(key=lambda r: r["per_sqmi"], reverse=True)
+    print("\nMost playground-dense neighborhoods (per sq mi):")
+    for r in ranking[:12]:
+        print(f"  {r['per_sqmi']:5.1f}  {r['name']} ({r['boro']}) — {r['count']} in {r['area']:.2f} sq mi")
+    print("\nLeast dense residential neighborhoods with >=0.2 sq mi:")
+    big = [r for r in ranking if r["area"] >= 0.2]
+    big.sort(key=lambda r: r["per_sqmi"])
+    for r in big[:10]:
+        print(f"  {r['per_sqmi']:5.1f}  {r['name']} ({r['boro']}) — {r['count']} in {r['area']:.2f} sq mi")
 
 
 if __name__ == "__main__":

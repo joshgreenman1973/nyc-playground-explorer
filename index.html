@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>NYC Playground & Court Explorer</title>
-<meta name="description" content="Find every public playground, basketball court, handball court and more across New York City. Built on NYC Parks open data.">
+<meta name="description" content="Find every public playground, basketball court, handball court and more across New York City. See actual court shapes, neighborhood density, and how many parks are within a 10-minute walk of any address.">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <style>
@@ -18,26 +18,43 @@
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:var(--ink);background:var(--paper)}
   #app{display:flex;height:100%;overflow:hidden}
 
-  /* Sidebar */
-  #panel{width:330px;flex:0 0 330px;height:100%;overflow-y:auto;background:var(--paper);
+  #panel{width:340px;flex:0 0 340px;height:100%;overflow-y:auto;background:var(--paper);
     border-right:1px solid var(--line);display:flex;flex-direction:column}
-  .pad{padding:18px 20px}
+  .pad{padding:16px 20px}
   header.brand{border-bottom:1px solid var(--line)}
-  header.brand h1{margin:0;font-size:20px;letter-spacing:-.01em;line-height:1.15}
-  header.brand p{margin:6px 0 0;font-size:12.5px;color:#6b6a5f;line-height:1.45}
-  .count{font-size:12px;color:#6b6a5f;margin-top:10px}
+  header.brand h1{margin:0;font-size:19px;letter-spacing:-.01em;line-height:1.15}
+  header.brand p{margin:6px 0 0;font-size:12px;color:#6b6a5f;line-height:1.45}
+  .count{font-size:12px;color:#6b6a5f;margin-top:8px}
   .count b{color:var(--ink)}
 
-  .search{position:relative;margin-top:14px}
-  .search input{width:100%;padding:9px 12px 9px 32px;border:1px solid var(--line);border-radius:9px;
-    font-size:14px;background:#fff;color:var(--ink)}
-  .search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.45}
-
   .group{border-top:1px solid var(--line)}
-  .group h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#8a897c;margin:0 0 10px}
+  .group h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#8a897c;margin:0 0 10px;display:flex;align-items:center;gap:7px}
 
-  .filter{display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;user-select:none;font-size:14px}
-  .filter input{display:none}
+  /* Address finder */
+  .addr-wrap{position:relative}
+  .addr-input{width:100%;padding:10px 12px 10px 34px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fff;color:var(--ink)}
+  .addr-wrap > svg{position:absolute;left:11px;top:13px;opacity:.45}
+  .addr-list{position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:1000;overflow:hidden;display:none}
+  .addr-list.open{display:block}
+  .addr-item{padding:9px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid #f0ece1}
+  .addr-item:last-child{border-bottom:none}
+  .addr-item:hover,.addr-item.active{background:#f2efe6}
+  .nearby{margin-top:12px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:13px 14px;display:none}
+  .nearby.show{display:block}
+  .nearby .hd{font-size:12px;color:#6b6a5f;margin-bottom:8px}
+  .nearby .hd b{color:var(--ink)}
+  .nearby .big{display:flex;gap:16px;margin-bottom:10px}
+  .nearby .stat{line-height:1.1}
+  .nearby .stat .num{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+  .nearby .stat .lab{font-size:11px;color:#8a897c}
+  .nearby .num.pg{color:var(--playground)} .nearby .num.ct{color:var(--basketball)}
+  .nearby ul{list-style:none;margin:6px 0 0;padding:0;max-height:148px;overflow-y:auto}
+  .nearby li{font-size:12.5px;padding:5px 0;border-top:1px solid #f0ece1;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+  .nearby li:hover{color:#1f6fd6}
+  .nearby li .d{color:#9a998c;flex:0 0 auto}
+  .nearby .clr{font-size:11.5px;color:#9a998c;cursor:pointer;margin-top:9px;display:inline-block}
+
+  .filter{display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;user-select:none;font-size:13.5px}
   .dot{width:15px;height:15px;border-radius:50%;flex:0 0 15px;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
   .filter .lbl{flex:1}
   .filter .n{font-size:12px;color:#9a998c;font-variant-numeric:tabular-nums}
@@ -48,21 +65,29 @@
   .pill{font-size:12.5px;padding:5px 11px;border:1px solid var(--line);border-radius:20px;cursor:pointer;background:#fff;color:#555}
   .pill.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 
-  .toggle{display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer;padding:4px 0}
+  .toggle{display:flex;align-items:center;gap:10px;font-size:13.5px;cursor:pointer;padding:5px 0}
   .switch{width:38px;height:22px;border-radius:20px;background:#cfccbf;position:relative;transition:.15s;flex:0 0 38px}
   .switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
   .toggle.on .switch{background:var(--playground)}
+  .toggle.on.blue .switch{background:#3182bd}
   .toggle.on .switch::after{left:18px}
 
-  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:10px;border:1px solid var(--line);
-    border-radius:9px;background:#fff;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer}
+  .search-mini{position:relative;margin-top:4px}
+  .search-mini input{width:100%;padding:8px 11px 8px 30px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff}
+  .search-mini svg{position:absolute;left:9px;top:9px;opacity:.4}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;background:#fff;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer;margin-top:10px}
   .btn:active{transform:translateY(1px)}
+
+  /* density ranking */
+  #rank{display:none;margin-top:10px}
+  #rank.show{display:block}
+  #rank ol{margin:0;padding-left:20px;font-size:12.5px;line-height:1.6}
+  #rank .sub{font-size:11px;color:#9a998c;margin:8px 0 4px}
 
   footer.meta{margin-top:auto;font-size:11px;color:#9a998c;line-height:1.5}
   footer.meta a{color:#6b6a5f}
 
-  /* Map */
-  #map{flex:1;height:100%;background:#dfe7e3}
+  #map{flex:1;height:100%;background:#dfe7e3;position:relative}
   .leaflet-popup-content{margin:13px 15px;font-size:13.5px;line-height:1.5}
   .pop-title{font-weight:700;font-size:14.5px;margin-bottom:3px}
   .pop-loc{color:#6b6a5f;margin-bottom:7px}
@@ -70,17 +95,29 @@
   .pop-tag{font-size:11px;padding:2px 8px;border-radius:12px;color:#fff;font-weight:600}
   .pop-acc{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--playground);font-weight:600;margin-top:7px}
   .pop-dir{display:inline-block;margin-top:9px;font-size:12.5px;font-weight:600;color:#1f6fd6;text-decoration:none}
+  .leaflet-tooltip.tip{background:#1d2521;color:#fff;border:none;border-radius:7px;padding:6px 9px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.3);line-height:1.35}
+  .leaflet-tooltip.tip::before{border-top-color:#1d2521}
+  .tip b{font-size:12.5px}
+  .tip .t-sub{color:#c7c4b8}
+  .nta-tip{background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+  .nta-tip b{display:block;margin-bottom:2px}
 
   .marker-pin{border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
-  .cluster{background:rgba(46,158,91,.85);color:#fff;border-radius:50%;display:flex;align-items:center;
-    justify-content:center;font-weight:700;font-size:13px;border:3px solid rgba(255,255,255,.7)}
+  .cluster{background:rgba(46,158,91,.85);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:3px solid rgba(255,255,255,.7)}
 
-  /* Mobile */
-  #handle{display:none}
+  .legend{position:absolute;right:12px;bottom:24px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:11.5px;box-shadow:0 3px 12px rgba(0,0,0,.15);z-index:600;display:none}
+  .legend.show{display:block}
+  .legend h4{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a897c}
+  .legend .row{display:flex;align-items:center;gap:7px;margin:3px 0}
+  .legend .sw{width:16px;height:12px;border-radius:2px}
+  .zoomhint{position:absolute;left:50%;transform:translateX(-50%);bottom:18px;background:rgba(29,37,33,.9);color:#fff;font-size:12px;padding:7px 13px;border-radius:20px;z-index:600;pointer-events:none;opacity:0;transition:opacity .3s}
+  .zoomhint.show{opacity:1}
+
+  #handleNote{display:none}
   @media(max-width:760px){
     #app{flex-direction:column}
-    #map{order:1;height:55%}
-    #panel{order:2;width:100%;flex:1;height:45%;border-right:none;border-top:1px solid var(--line)}
+    #map{order:1;height:52%}
+    #panel{order:2;width:100%;flex:1;height:48%;border-right:none;border-top:1px solid var(--line)}
     header.brand p{display:none}
   }
 </style>
@@ -90,13 +127,23 @@
   <div id="panel">
     <header class="brand pad">
       <h1>NYC Playground &amp; Court Explorer</h1>
-      <p>Every public playground and court across the five boroughs, from NYC Parks open data.</p>
+      <p>Every public playground and court across the five boroughs, with real shapes and neighborhood density. NYC Parks open data.</p>
       <div class="count" id="count">Loading…</div>
-      <div class="search">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="search" type="search" placeholder="Search by name or street…" autocomplete="off">
-      </div>
     </header>
+
+    <div class="group pad">
+      <h2>Find parks near an address</h2>
+      <div class="addr-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        <input class="addr-input" id="addr" type="search" placeholder="Type a NYC address…" autocomplete="off">
+        <div class="addr-list" id="addrList"></div>
+      </div>
+      <button class="btn" id="locate">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        Use my location
+      </button>
+      <div class="nearby" id="nearby"></div>
+    </div>
 
     <div class="group pad">
       <h2>Show on map</h2>
@@ -109,26 +156,47 @@
     </div>
 
     <div class="group pad">
-      <h2>Options</h2>
-      <div class="toggle" id="accToggle">
+      <h2>Layers &amp; options</h2>
+      <div class="toggle blue" id="densToggle">
+        <div class="switch"></div>
+        <span>Playground density by neighborhood</span>
+      </div>
+      <div id="rank">
+        <div class="sub">Most playground-dense neighborhoods (per sq mi)</div>
+        <ol id="rankList"></ol>
+      </div>
+      <div class="toggle" id="accToggle" style="margin-top:4px">
         <div class="switch"></div>
         <span>Wheelchair-accessible courts only</span>
       </div>
-      <div style="height:12px"></div>
-      <button class="btn" id="locate">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-        Find near me
-      </button>
+      <div class="search-mini">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="nameFilter" type="search" placeholder="Filter list by park name…" autocomplete="off">
+      </div>
     </div>
 
     <footer class="meta pad">
-      Data: NYC Dept. of Parks &amp; Recreation via NYC Open Data —
-      <a href="https://data.cityofnewyork.us/d/j55h-3upk" target="_blank">Playgrounds</a> &amp;
-      <a href="https://data.cityofnewyork.us/d/qnem-b8re" target="_blank">Athletic Facilities</a>.
-      Marker positions are approximate facility centroids. Handball courts are New York City's racquetball-style courts.
+      Data: NYC Dept. of Parks &amp; Recreation &amp; City Planning via NYC Open Data —
+      <a href="https://data.cityofnewyork.us/d/j55h-3upk" target="_blank">Playgrounds</a>,
+      <a href="https://data.cityofnewyork.us/d/qnem-b8re" target="_blank">Athletic Facilities</a>,
+      <a href="https://data.cityofnewyork.us/d/9nt8-h7nd" target="_blank">2020 NTAs</a>.
+      Each court is mapped as its own facility, so one park can hold many adjacent courts.
+      Handball courts are New York City's racquetball-style courts. Walk radius is ½ mile (≈10 min) as the crow flies.
+      Address search by <a href="https://geosearch.planninglabs.nyc" target="_blank">NYC Planning GeoSearch</a>.
     </footer>
   </div>
-  <div id="map"></div>
+  <div id="map">
+    <div class="legend" id="legend">
+      <h4>Playgrounds / sq mi</h4>
+      <div class="row"><span class="sw" style="background:#08519c"></span> 15 or more</div>
+      <div class="row"><span class="sw" style="background:#3182bd"></span> 10 – 15</div>
+      <div class="row"><span class="sw" style="background:#6baed6"></span> 6 – 10</div>
+      <div class="row"><span class="sw" style="background:#9ecae1"></span> 3 – 6</div>
+      <div class="row"><span class="sw" style="background:#c6dbef"></span> under 3</div>
+      <div class="row"><span class="sw" style="background:#eef3f8"></span> none</div>
+    </div>
+    <div class="zoomhint" id="zoomhint">Zoom in to see actual court &amp; playground shapes</div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -145,14 +213,11 @@ const CATS = [
 ];
 const COLOR = Object.fromEntries(CATS.map(c=>[c.key,c.color]));
 const BOROS = ["Manhattan","Brooklyn","Queens","Bronx","Staten Island"];
+const POLY_ZOOM = 15;          // show real shapes at/above this zoom
+const WALK_MI = 0.5;           // ~10-minute walk
 
-const state = {
-  cats: new Set(CATS.map(c=>c.key)),
-  boros: new Set(BOROS),
-  accOnly:false,
-  q:""
-};
-let places = [];
+const state = {cats:new Set(CATS.map(c=>c.key)), boros:new Set(BOROS), accOnly:false, q:""};
+let places=[], ntaLayer=null, densOn=false;
 
 const map = L.map("map",{zoomControl:true,preferCanvas:true}).setView([40.7128,-73.96],11);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{
@@ -160,135 +225,226 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{
 }).addTo(map);
 
 const cluster = L.markerClusterGroup({
-  maxClusterRadius: 50,
-  chunkedLoading: true,
-  iconCreateFunction: c => {
-    const n = c.getChildCount();
-    const s = n<25?32:n<150?40:48;
-    return L.divIcon({html:`<div class="cluster" style="width:${s}px;height:${s}px">${n}</div>`,
-      className:"", iconSize:[s,s]});
-  }
+  maxClusterRadius:50, chunkedLoading:true, disableClusteringAtZoom:POLY_ZOOM,
+  iconCreateFunction:c=>{const n=c.getChildCount();const s=n<25?32:n<150?40:48;
+    return L.divIcon({html:`<div class="cluster" style="width:${s}px;height:${s}px">${n}</div>`,className:"",iconSize:[s,s]});}
 });
-map.addLayer(cluster);
+const polyLayer = L.layerGroup();
+const findLayer = L.layerGroup().addTo(map);
 
-// each place -> category key used for color + filtering
 function catOf(p){ return p.kind==="playground" ? "playground" : (p.sports[0]||"Basketball"); }
 function placeCats(p){ return p.kind==="playground" ? ["playground"] : p.sports; }
 
-function icon(color){
-  const s=13;
-  return L.divIcon({
-    html:`<div class="marker-pin" style="width:${s}px;height:${s}px;background:${color}"></div>`,
-    className:"", iconSize:[s,s], iconAnchor:[s/2,s/2]
-  });
-}
-
-function gmaps(p){
-  return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}`;
-}
+function icon(color){const s=13;return L.divIcon({html:`<div class="marker-pin" style="width:${s}px;height:${s}px;background:${color}"></div>`,className:"",iconSize:[s,s],iconAnchor:[s/2,s/2]});}
+function gmaps(p){return `https://www.google.com/maps/dir/?api=1&destination=${p.c[0]},${p.c[1]}`;}
 
 function popupHtml(p){
-  const cats = placeCats(p);
-  const tags = cats.map(c=>`<span class="pop-tag" style="background:${COLOR[c]||'#888'}">${c==='playground'?'Playground':c}</span>`).join("");
-  const acc = p.acc ? `<div class="pop-acc">♿ Wheelchair-accessible</div>` : "";
-  const surf = p.surface ? ` · ${p.surface}` : "";
+  const tags=placeCats(p).map(c=>`<span class="pop-tag" style="background:${COLOR[c]||'#888'}">${c==='playground'?'Playground':c}</span>`).join("");
+  const acc=p.acc?`<div class="pop-acc">♿ Wheelchair-accessible</div>`:"";
+  const surf=p.surface?` · ${p.surface}`:"";
   return `<div class="pop-title">${p.name}</div>`+
     (p.loc?`<div class="pop-loc">${p.loc}${surf}</div>`:"")+
     `<div class="pop-tags">${tags}</div>`+acc+
     `<a class="pop-dir" href="${gmaps(p)}" target="_blank">Directions →</a>`;
 }
+function tipHtml(p){
+  const what=p.kind==="playground"?"Children's playground":p.sports.join(", ")+" court"+(p.sports.length>1?"s":"");
+  const extra=p.kind==="court"&&p.surface?` · ${p.surface}`:"";
+  const acc=p.acc?" ♿":"";
+  return `<b>${p.name}</b><br><span class="t-sub">${what}${extra}${acc}</span>`;
+}
 
-function visible(p){
+function passes(p){
   if(!state.boros.has(p.boro)) return false;
-  if(state.accOnly && !(p.kind==="court" && p.acc)) return false;
-  const cats = placeCats(p);
-  if(!cats.some(c=>state.cats.has(c))) return false;
-  if(state.q){
-    const hay=(p.name+" "+p.loc+" "+p.boro).toLowerCase();
-    if(!hay.includes(state.q)) return false;
-  }
+  if(state.accOnly && !(p.kind==="court"&&p.acc)) return false;
+  if(!placeCats(p).some(c=>state.cats.has(c))) return false;
+  if(state.q){ if(!(p.name+" "+p.loc+" "+p.boro).toLowerCase().includes(state.q)) return false; }
   return true;
 }
 
+// ---- marker / shape rendering ----
 function render(){
   cluster.clearLayers();
-  const markers=[];
-  let shown=0;
+  const markers=[]; let shown=0;
   for(const p of places){
-    if(!visible(p)) continue;
+    if(!passes(p)) continue;
     shown++;
-    const m=L.marker([p.lat,p.lon],{icon:icon(COLOR[catOf(p)]||"#888")});
-    m.bindPopup(popupHtml(p),{maxWidth:260});
+    const m=L.marker(p.c,{icon:icon(COLOR[catOf(p)]||"#888")});
+    m.bindTooltip(tipHtml(p),{className:"tip",direction:"top",offset:[0,-6]});
+    m.bindPopup(()=>popupHtml(p),{maxWidth:260});
     markers.push(m);
   }
   cluster.addLayers(markers);
   document.getElementById("count").innerHTML=`<b>${shown.toLocaleString()}</b> places shown`;
+  syncView();
 }
 
-// Build filter UI
+function drawShapes(){
+  polyLayer.clearLayers();
+  if(map.getZoom()<POLY_ZOOM) return;
+  const b=map.getBounds().pad(0.2);
+  for(const p of places){
+    if(!passes(p)) continue;
+    if(!b.contains(p.c)) continue;
+    const col=COLOR[catOf(p)]||"#888";
+    const poly=L.polygon(p.poly,{color:col,weight:1.5,fillColor:col,fillOpacity:.55,
+      pane:"markerPane"});
+    poly.bindTooltip(tipHtml(p),{className:"tip",sticky:true});
+    poly.bindPopup(()=>popupHtml(p),{maxWidth:260});
+    polyLayer.addLayer(poly);
+  }
+}
+
+function syncView(){
+  const z=map.getZoom();
+  const hint=document.getElementById("zoomhint");
+  if(z>=POLY_ZOOM){
+    if(map.hasLayer(cluster)) map.removeLayer(cluster);
+    if(!map.hasLayer(polyLayer)) map.addLayer(polyLayer);
+    drawShapes();
+    hint.classList.remove("show");
+  }else{
+    if(map.hasLayer(polyLayer)) map.removeLayer(polyLayer);
+    if(!map.hasLayer(cluster)) map.addLayer(cluster);
+    if(z>=12 && z<POLY_ZOOM) hint.classList.add("show"); else hint.classList.remove("show");
+  }
+}
+map.on("moveend zoomend",()=>{ if(map.getZoom()>=POLY_ZOOM) drawShapes(); syncView(); });
+
+// ---- UI builders ----
 function buildFilters(){
   const wrap=document.getElementById("filters");
   CATS.forEach(c=>{
-    const row=document.createElement("label");
-    row.className="filter";
-    row.innerHTML=`<span class="dot" style="background:${c.color}"></span>
-      <span class="lbl">${c.label}</span><span class="n" data-n="${c.key}"></span>`;
-    row.onclick=()=>{
-      if(state.cats.has(c.key)) state.cats.delete(c.key); else state.cats.add(c.key);
-      row.classList.toggle("off",!state.cats.has(c.key));
-      render();
-    };
+    const row=document.createElement("label");row.className="filter";
+    row.innerHTML=`<span class="dot" style="background:${c.color}"></span><span class="lbl">${c.label}</span><span class="n" data-n="${c.key}"></span>`;
+    row.onclick=()=>{ state.cats.has(c.key)?state.cats.delete(c.key):state.cats.add(c.key); row.classList.toggle("off",!state.cats.has(c.key)); render(); };
     wrap.appendChild(row);
   });
 }
 function buildBoros(){
   const wrap=document.getElementById("boros");
   BOROS.forEach(b=>{
-    const el=document.createElement("span");
-    el.className="pill on"; el.textContent=b;
-    el.onclick=()=>{
-      if(state.boros.has(b)) state.boros.delete(b); else state.boros.add(b);
-      el.classList.toggle("on",state.boros.has(b));
-      render();
-    };
+    const el=document.createElement("span");el.className="pill on";el.textContent=b;
+    el.onclick=()=>{ state.boros.has(b)?state.boros.delete(b):state.boros.add(b); el.classList.toggle("on",state.boros.has(b)); render(); };
     wrap.appendChild(el);
   });
 }
 function updateCounts(){
   CATS.forEach(c=>{
     const n=places.filter(p=>placeCats(p).includes(c.key)).length;
-    const el=document.querySelector(`[data-n="${c.key}"]`);
-    if(el) el.textContent=n.toLocaleString();
+    const el=document.querySelector(`[data-n="${c.key}"]`); if(el) el.textContent=n.toLocaleString();
   });
 }
 
-document.getElementById("accToggle").onclick=function(){
-  state.accOnly=!state.accOnly;
-  this.classList.toggle("on",state.accOnly);
-  render();
+document.getElementById("accToggle").onclick=function(){ state.accOnly=!state.accOnly; this.classList.toggle("on",state.accOnly); render(); };
+let qt; document.getElementById("nameFilter").oninput=function(){ clearTimeout(qt); qt=setTimeout(()=>{ state.q=this.value.trim().toLowerCase(); render(); },180); };
+
+// ---- density choropleth ----
+function densColor(v){ return v>=15?'#08519c':v>=10?'#3182bd':v>=6?'#6baed6':v>=3?'#9ecae1':v>0?'#c6dbef':'#eef3f8'; }
+function loadDensity(){
+  return fetch("data/neighborhoods.json").then(r=>r.json()).then(geo=>{
+    ntaLayer=L.geoJSON(geo,{
+      pane:"overlayPane",
+      style:f=>({color:"#fff",weight:1,fillColor:densColor(f.properties.per_sqmi),fillOpacity:.62}),
+      onEachFeature:(f,layer)=>{
+        const pr=f.properties;
+        layer.bindTooltip(`<b>${pr.name}</b>${pr.count} playground${pr.count===1?"":"s"} · ${pr.per_sqmi}/sq mi`,{className:"nta-tip",sticky:true});
+      }
+    });
+    // ranking (residential NTAs only)
+    const rank=geo.features.map(f=>f.properties).filter(p=>p.type==="0"&&p.area>=0.05)
+      .sort((a,b)=>b.per_sqmi-a.per_sqmi).slice(0,8);
+    document.getElementById("rankList").innerHTML=rank.map(p=>`<li>${p.name} — <b>${p.per_sqmi}</b></li>`).join("");
+  });
+}
+document.getElementById("densToggle").onclick=function(){
+  densOn=!densOn; this.classList.toggle("on",densOn);
+  document.getElementById("legend").classList.toggle("show",densOn);
+  document.getElementById("rank").classList.toggle("show",densOn);
+  if(densOn){ if(ntaLayer){ntaLayer.addTo(map); ntaLayer.bringToBack();} }
+  else if(ntaLayer){ map.removeLayer(ntaLayer); }
 };
-let qt;
-document.getElementById("search").oninput=function(){
-  clearTimeout(qt);
-  qt=setTimeout(()=>{ state.q=this.value.trim().toLowerCase(); render(); },180);
+
+// ---- address autocomplete + 10-min walk ----
+const GEO="https://geosearch.planninglabs.nyc/v2/";
+function miBetween(aLat,aLon,bLat,bLon){
+  const R=3958.8,toR=Math.PI/180;
+  const dLat=(bLat-aLat)*toR, dLon=(bLon-aLon)*toR;
+  const s=Math.sin(dLat/2)**2+Math.cos(aLat*toR)*Math.cos(bLat*toR)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
+}
+const addrInput=document.getElementById("addr"), addrList=document.getElementById("addrList");
+let at, acFeatures=[];
+addrInput.oninput=function(){
+  clearTimeout(at); const text=this.value.trim();
+  if(text.length<3){ addrList.classList.remove("open"); return; }
+  at=setTimeout(()=>{
+    fetch(GEO+"autocomplete?size=6&text="+encodeURIComponent(text)).then(r=>r.json()).then(d=>{
+      acFeatures=d.features||[];
+      addrList.innerHTML=acFeatures.map((f,i)=>`<div class="addr-item" data-i="${i}">${f.properties.label}</div>`).join("");
+      addrList.classList.toggle("open",acFeatures.length>0);
+    }).catch(()=>{});
+  },180);
 };
+addrList.onclick=function(e){
+  const it=e.target.closest(".addr-item"); if(!it) return;
+  const f=acFeatures[+it.dataset.i];
+  addrInput.value=f.properties.label; addrList.classList.remove("open");
+  const [lon,lat]=f.geometry.coordinates;
+  showNearby(lat,lon,f.properties.label);
+};
+document.addEventListener("click",e=>{ if(!e.target.closest(".addr-wrap")) addrList.classList.remove("open"); });
+
+function showNearby(lat,lon,label){
+  findLayer.clearLayers();
+  L.circle([lat,lon],{radius:WALK_MI*1609.34,color:"#1f6fd6",weight:1.5,fillColor:"#1f6fd6",fillOpacity:.07}).addTo(findLayer);
+  L.marker([lat,lon],{icon:L.divIcon({className:"",iconSize:[18,18],iconAnchor:[9,9],
+    html:'<div style="width:14px;height:14px;border-radius:50%;background:#1f6fd6;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>'})}).addTo(findLayer);
+  map.fitBounds(L.latLng(lat,lon).toBounds(WALK_MI*1609.34*2.4));
+
+  const near=[];
+  for(const p of places){
+    const d=miBetween(lat,lon,p.c[0],p.c[1]);
+    if(d<=WALK_MI) near.push({p,d});
+  }
+  near.sort((a,b)=>a.d-b.d);
+  const pg=near.filter(n=>n.p.kind==="playground").length;
+  const ct=near.filter(n=>n.p.kind==="court").length;
+  const parks=new Set(near.map(n=>n.p.prop).filter(Boolean)).size;
+  const list=near.slice(0,10).map(n=>{
+    const col=COLOR[catOf(n.p)]||"#888";
+    return `<li data-lat="${n.p.c[0]}" data-lon="${n.p.c[1]}"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>${n.p.name}</span><span class="d">${(n.d).toFixed(2)} mi</span></li>`;
+  }).join("");
+
+  const box=document.getElementById("nearby");
+  box.innerHTML=
+    `<div class="hd">Within a 10-minute walk of <b>${label.split(",")[0]}</b> (½ mile)</div>`+
+    `<div class="big"><div class="stat"><div class="num pg">${pg}</div><div class="lab">playground${pg===1?"":"s"}</div></div>`+
+    `<div class="stat"><div class="num ct">${ct}</div><div class="lab">court${ct===1?"":"s"}</div></div>`+
+    `<div class="stat"><div class="num">${parks}</div><div class="lab">park${parks===1?"":"s"}</div></div></div>`+
+    (list?`<ul>${list}</ul>`:`<div class="hd">No public playgrounds or courts within a 10-minute walk.</div>`)+
+    `<span class="clr" id="clrNear">Clear</span>`;
+  box.classList.add("show");
+  document.getElementById("clrNear").onclick=()=>{ box.classList.remove("show"); findLayer.clearLayers(); };
+  box.querySelectorAll("li").forEach(li=>li.onclick=()=>{
+    const la=+li.dataset.lat, lo=+li.dataset.lon;
+    const pl=places.find(p=>p.c[0]===la&&p.c[1]===lo);
+    map.flyTo([la,lo],18);
+    if(pl) setTimeout(()=>L.popup({maxWidth:260}).setLatLng([la,lo]).setContent(popupHtml(pl)).openOn(map),650);
+  });
+}
+
 document.getElementById("locate").onclick=function(){
   if(!navigator.geolocation){alert("Location not available on this device.");return;}
-  this.textContent="Locating…";
+  const b=this; b.textContent="Locating…";
   navigator.geolocation.getCurrentPosition(pos=>{
-    const {latitude,longitude}=pos.coords;
-    map.setView([latitude,longitude],15);
-    L.circleMarker([latitude,longitude],{radius:8,color:"#1f6fd6",fillColor:"#1f6fd6",fillOpacity:.9,weight:3}).addTo(map);
-    this.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Find near me';
-  },()=>{ alert("Couldn't get your location."); this.textContent="Find near me"; });
+    showNearby(pos.coords.latitude,pos.coords.longitude,"Your location");
+    b.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Use my location';
+  },()=>{ alert("Couldn't get your location."); b.textContent="Use my location"; });
 };
 
-buildFilters();
-buildBoros();
-
-fetch("data/places.json")
-  .then(r=>r.json())
-  .then(d=>{ places=d; updateCounts(); render(); })
+buildFilters(); buildBoros();
+fetch("data/places.json").then(r=>r.json()).then(d=>{ places=d; updateCounts(); render(); loadDensity(); })
   .catch(e=>{ document.getElementById("count").textContent="Failed to load data."; console.error(e); });
 </script>
 </body>

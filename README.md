@@ -10,10 +10,15 @@ bocce courts.
 ## Features
 
 - 5,081 places across all five boroughs, clustered for fast browsing
+- **Actual facility shapes** — zoom in and every court / play area is drawn as
+  its real mapped polygon, not a dot
+- **Hover tooltips** with name, type, surface and accessibility
+- **Playground density by neighborhood** choropleth (playgrounds per square mile
+  across 262 neighborhoods) with a live ranking
+- **Address autocomplete** (free NYC GeoSearch) that counts every playground and
+  court within a 10-minute (½-mile) walk
 - Filter by amenity type, borough, and wheelchair accessibility
-- Search by park name or street
-- "Find near me" geolocation
-- One-tap directions to any spot via Google Maps
+- "Use my location" geolocation and one-tap Google Maps directions
 
 ## Data
 
