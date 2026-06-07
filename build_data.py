@@ -30,6 +30,7 @@ EQUIV_ID = "hm78-6dwm"  # 2020 census tracts -> 2020 NTA equivalency
 DCA_ID, ATH_ID, PROP_ID, NTA_ID = "j55h-3upk", "qnem-b8re", "enfh-gkve", "9nt8-h7nd"
 SCHOOL_ID = "bbtf-6p3c"   # Schoolyards to Playgrounds (public access out of school hours)
 NYCHA_ID = "phvi-damg"    # NYCHA public housing development boundaries
+PIP_ID = "yg3y-7juh"      # Parks Inspection Program inspections (condition grades)
 BASE = "https://data.cityofnewyork.us/resource/{}.json"
 SQFT_PER_SQMI = 27_878_400.0
 DEDUP_DEG = 0.00065       # ~60 m: drop a playground this close to one already counted
@@ -73,6 +74,31 @@ def rings_latlng(geom, prec=5):
         if len(ring) >= 3:
             out.append(ring)
     return out or None
+
+
+def pip_condition_grades():
+    """Most recent 2025-26 PIP overall-condition grade per property.
+
+    Returns (by_site, by_parent):
+      by_site[prop_id]      -> {"g": "A"|"U", "d": "YYYY-MM-DD"}  (zone-specific)
+      by_parent[gispropnum] -> same, most recent across all sub-sites of a park
+    Only Acceptable/Unacceptable rows are kept; "N" (not rated) is ignored so the
+    grade reflects the latest real inspection within the 2025-26 window.
+    """
+    rows = fetch(PIP_ID, {"$select": "prop_id,date,overall_condition",
+                          "$where": "inspection_year IN ('2025','2026') "
+                                    "AND overall_condition IN ('A','U')"})
+    by_site, by_parent = {}, {}
+    for r in rows:
+        pid, dt, g = r.get("prop_id"), (r.get("date") or "")[:10], r.get("overall_condition")
+        if not pid or not dt:
+            continue
+        if pid not in by_site or dt > by_site[pid]["d"]:
+            by_site[pid] = {"g": g, "d": dt}
+        par = pid.split("-")[0]
+        if par not in by_parent or dt > by_parent[par]["d"]:
+            by_parent[par] = {"g": g, "d": dt}
+    return by_site, by_parent
 
 
 def fetch_osm_playgrounds():
@@ -182,6 +208,7 @@ def build():
             "loc": (row.get("publiclocation") or "").strip(),
             "boro": BORO.get(row.get("borough", ""), row.get("borough", "")),
             "prop": row.get("gispropnum", ""),
+            "omp": row.get("omppropid", ""),
             "c": centroid_of(rings), "poly": rings,
         })
 
@@ -254,7 +281,8 @@ def build():
         places.append({
             "kind": "playground", "src": cand["src"],
             "name": cand["name"], "loc": cand["loc"], "boro": cand["boro"],
-            "prop": cand["prop"], "sports": [], "acc": None, "surface": "", "dim": "",
+            "prop": cand["prop"], "omp": cand.get("omp", ""),
+            "sports": [], "acc": None, "surface": "", "dim": "",
             "c": cand["c"], "poly": cand["poly"],
         })
 
@@ -282,8 +310,25 @@ def build():
             "c": centroid_of(rings), "poly": rings,
         })
 
+    # ---------- Attach most-recent 2025-26 condition grade (PIP) ----------
+    pip_site, pip_parent = pip_condition_grades()
+    graded = 0
+    for p in places:
+        g = (pip_site.get(p.get("omp")) or pip_site.get(p.get("prop"))
+             or pip_parent.get(p.get("prop")))
+        if g:
+            p["grade"], p["graded"] = g["g"], g["d"]
+            graded += 1
+        else:
+            p["grade"], p["graded"] = None, None
+        p.pop("omp", None)  # internal join key, not needed client-side
+
     with open("data/places.json", "w") as f:
         json.dump(places, f, separators=(",", ":"))
+    nA = sum(1 for p in places if p["grade"] == "A")
+    nU = sum(1 for p in places if p["grade"] == "U")
+    print(f"Condition grades (2025-26): {graded}/{len(places)} graded "
+          f"({100*graded/len(places):.0f}%) — Acceptable {nA}, Unacceptable {nU}")
 
     # ---------- Neighborhood density ----------
     kids_by_nta = child_pop_by_nta()

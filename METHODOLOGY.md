@@ -15,6 +15,7 @@ published on the NYC Open Data portal. Two datasets are combined.
 | School playgrounds | [Schoolyards to Playgrounds](https://data.cityofnewyork.us/d/dbmp-698d) | `bbtf-6p3c` | 294 |
 | NYCHA playgrounds | [OpenStreetMap](https://www.openstreetmap.org/copyright) ∩ [NYCHA Developments](https://data.cityofnewyork.us/d/phvi-damg) | `phvi-damg` | 122 |
 | Courts | [Athletic Facilities](https://data.cityofnewyork.us/d/qnem-b8re) | `qnem-b8re` | 4,072 |
+| Condition grades | [Parks Inspection Program – Inspections](https://data.cityofnewyork.us/d/yg3y-7juh) | `yg3y-7juh` | 2025–26 |
 | Park names & cross streets | [Parks Properties](https://data.cityofnewyork.us/d/enfh-gkve) | `enfh-gkve` | join key |
 | Neighborhood boundaries & area | [2020 Neighborhood Tabulation Areas](https://data.cityofnewyork.us/d/9nt8-h7nd) | `9nt8-h7nd` | 262 NTAs |
 | Tract → neighborhood crosswalk | [2020 Census Tracts to 2020 NTAs](https://data.cityofnewyork.us/d/hm78-6dwm) | `hm78-6dwm` | join key |
@@ -163,6 +164,34 @@ the children actually are**:
 All three sidebar rankings are restricted to **residential NTAs** (type `0`),
 excluding park, cemetery, airport and other non-residential tabulation areas
 whose figures are not meaningful.
+
+## Condition grades (2025–26)
+
+Every site carries its most recent **Parks Inspection Program (PIP)** overall
+condition rating, but only from inspections in **2025 or 2026** — older ratings
+are deliberately not shown. PIP grades are binary:
+
+- **A — Acceptable**
+- **U — Unacceptable**
+- (rows graded "N / not rated" are skipped, so the grade reflects the latest real
+  A/U inspection in the window)
+
+Inspections in the dataset run from **Feb 2025 through Feb 2026**. Grades are
+joined to each playground and court by property ID: first the site's own
+sub-property ID (`omppropid`), then its parent property (`gispropnum`), then the
+most recent rating among any sub-site of that park. This covers **91%** of mapped
+places (5,003 of 5,498); the rest were not inspected in the 2025–26 window and
+show as "not rated." Across inspected sites, **about 84% are rated Acceptable.**
+
+Toggle **"Color by 2025–26 condition grade"** to recolour every marker and shape
+green (Acceptable) / red (Unacceptable) / grey (not rated). The grade and
+inspection month also appear in each site's hover tooltip and popup.
+
+**Caveats.** PIP rates a *site's* overall condition (cleanliness, structures,
+safety surface, glass, graffiti, etc.) on the inspection day — it is a snapshot,
+not a running average, and "Acceptable" is a floor, not a quality score. NYCHA
+playgrounds (sourced from OpenStreetMap, not NYC Parks) are **not** in PIP and so
+always show as "not rated."
 
 ## The statistics strip
 

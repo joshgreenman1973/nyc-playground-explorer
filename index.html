@@ -108,6 +108,9 @@
   .pop-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
   .pop-tag{font-size:11px;padding:2px 8px;border-radius:12px;color:#fff;font-weight:600}
   .pop-acc{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--playground);font-weight:600;margin-top:7px}
+  .pop-cond{display:inline-block;margin-top:7px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:5px}
+  .pop-cond.ok{background:#e3f3e9;color:#1f7a44} .pop-cond.bad{background:#fbe5e3;color:#b5281b}
+  .pop-cond.na{background:#eee;color:#888}
   .pop-dir{display:inline-block;margin-top:9px;font-size:12.5px;font-weight:600;color:#1f6fd6;text-decoration:none}
   .leaflet-tooltip.tip{background:#1d2521;color:#fff;border:none;border-radius:7px;padding:6px 9px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.3);line-height:1.35}
   .leaflet-tooltip.tip::before{border-top-color:#1d2521}
@@ -120,6 +123,7 @@
 
   .legend{position:absolute;right:12px;bottom:24px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:11.5px;box-shadow:0 3px 12px rgba(0,0,0,.15);z-index:600;display:none;max-width:200px}
   .legend.show{display:block}
+  .legend.cond{left:12px;right:auto}
   .legend h4{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a897c}
   .legend .row{display:flex;align-items:center;gap:7px;margin:3px 0}
   .legend .sw{width:16px;height:12px;border-radius:2px;flex:0 0 16px}
@@ -189,6 +193,7 @@
 
     <div class="group pad">
       <h2>Options</h2>
+      <div class="toggle2" id="condToggle"><div class="switch"></div><span>Color by 2025–26 condition grade</span></div>
       <div class="toggle2" id="accToggle"><div class="switch"></div><span>Wheelchair-accessible courts only</span></div>
       <div class="search-mini">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
@@ -211,6 +216,13 @@
   <div id="map">
     <div id="statstrip"></div>
     <div class="legend" id="legend"><h4 id="legendTitle"></h4><div id="legendBody"></div><div class="note" id="legendNote"></div></div>
+    <div class="legend cond" id="condlegend">
+      <h4>2025–26 condition</h4>
+      <div class="row"><span class="sw" style="background:#2e9e5b"></span> Acceptable</div>
+      <div class="row"><span class="sw" style="background:#d8412f"></span> Unacceptable</div>
+      <div class="row"><span class="sw" style="background:#9e9e9e"></span> Not rated</div>
+      <div class="note">NYC Parks Inspection Program, latest rating per site.</div>
+    </div>
     <div class="zoomhint" id="zoomhint">Zoom in to see actual court &amp; playground shapes</div>
   </div>
 </div>
@@ -232,6 +244,11 @@ const CATS=[
 const COLOR=Object.fromEntries(CATS.map(c=>[c.key,c.color]));
 const PG_COLOR="#2e9e5b";
 const TAGLABEL={parks:"NYC Parks playground",school:"School playground",nycha:"NYCHA playground"};
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function gradeDate(d){if(!d)return"";const[y,m]=d.split("-");return `${MONTHS[+m-1]} ${y}`;}
+function condColor(g){return g==="A"?"#2e9e5b":g==="U"?"#d8412f":"#9e9e9e";}
+let condOn=false;
+function mColor(p){return condOn?condColor(p.grade):(COLOR[catOf(p)]||"#888");}
 const BOROS=["Manhattan","Brooklyn","Queens","Bronx","Staten Island"];
 const POLY_ZOOM=15;
 const state={cats:new Set(CATS.map(c=>c.key)),boros:new Set(BOROS),accOnly:false,q:""};
@@ -251,16 +268,22 @@ function placeCats(p){return p.kind==="playground"?[p.src]:p.sports;}
 function icon(c){const s=13;return L.divIcon({html:`<div class="marker-pin" style="width:${s}px;height:${s}px;background:${c}"></div>`,className:"",iconSize:[s,s],iconAnchor:[s/2,s/2]});}
 function gmaps(p){return `https://www.google.com/maps/dir/?api=1&destination=${p.c[0]},${p.c[1]}`;}
 
+function condBadge(p){
+  if(!p.grade) return `<div class="pop-cond na">Condition not rated in 2025–26</div>`;
+  const ok=p.grade==="A";
+  return `<div class="pop-cond ${ok?'ok':'bad'}">${ok?'✓ Acceptable':'✗ Unacceptable'} condition · ${gradeDate(p.graded)}</div>`;
+}
 function popupHtml(p){
   const tags=placeCats(p).map(c=>`<span class="pop-tag" style="background:${COLOR[c]||'#888'}">${TAGLABEL[c]||c}</span>`).join("");
   const acc=p.acc?`<div class="pop-acc">♿ Wheelchair-accessible</div>`:"";
   const surf=p.surface?` · ${p.surface}`:"";
-  return `<div class="pop-title">${p.name}</div>`+(p.loc?`<div class="pop-loc">${p.loc}${surf}</div>`:"")+`<div class="pop-tags">${tags}</div>`+acc+`<a class="pop-dir" href="${gmaps(p)}" target="_blank">Directions →</a>`;
+  return `<div class="pop-title">${p.name}</div>`+(p.loc?`<div class="pop-loc">${p.loc}${surf}</div>`:"")+`<div class="pop-tags">${tags}</div>`+acc+`<br>`+condBadge(p)+`<a class="pop-dir" href="${gmaps(p)}" target="_blank" style="display:block">Directions →</a>`;
 }
 function tipHtml(p){
   const what=p.kind==="playground"?(TAGLABEL[p.src]||"Playground"):p.sports.join(", ")+" court"+(p.sports.length>1?"s":"");
   const extra=p.kind==="court"&&p.surface?` · ${p.surface}`:"";
-  return `<b>${p.name}</b><br><span class="t-sub">${what}${extra}${p.acc?" ♿":""}</span>`;
+  const cond=p.grade?`<br><span class="t-sub">${p.grade==="A"?"✓ Acceptable":"✗ Unacceptable"} · ${gradeDate(p.graded)}</span>`:"";
+  return `<b>${p.name}</b><br><span class="t-sub">${what}${extra}${p.acc?" ♿":""}</span>${cond}`;
 }
 function passes(p){
   if(!state.boros.has(p.boro))return false;
@@ -275,7 +298,7 @@ function render(){
   const markers=[];let shown=0;
   for(const p of places){
     if(!passes(p))continue; shown++;
-    const m=L.marker(p.c,{icon:icon(COLOR[catOf(p)]||"#888")});
+    const m=L.marker(p.c,{icon:icon(mColor(p))});
     m.bindTooltip(tipHtml(p),{className:"tip",direction:"top",offset:[0,-6]});
     m.bindPopup(()=>popupHtml(p),{maxWidth:260});
     markers.push(m);
@@ -290,7 +313,7 @@ function drawShapes(){
   const b=map.getBounds().pad(0.2);
   for(const p of places){
     if(!passes(p)||!b.contains(p.c))continue;
-    const col=COLOR[catOf(p)]||"#888";
+    const col=mColor(p);
     // NYCHA playgrounds come from OSM points (no polygon) — draw a small circle
     const shape=p.poly?L.polygon(p.poly,{color:col,weight:1.5,fillColor:col,fillOpacity:.55,pane:"markerPane"})
       :L.circleMarker(p.c,{radius:7,color:"#fff",weight:1.5,fillColor:col,fillOpacity:.9,pane:"markerPane"});
@@ -328,6 +351,8 @@ function buildBoros(){
 }
 function updateCounts(){CATS.forEach(c=>{const n=places.filter(p=>placeCats(p).includes(c.key)).length;const el=document.querySelector(`[data-n="${c.key}"]`);if(el)el.textContent=n.toLocaleString();});}
 document.getElementById("accToggle").onclick=function(){state.accOnly=!state.accOnly;this.classList.toggle("on",state.accOnly);render();};
+document.getElementById("condToggle").onclick=function(){condOn=!condOn;this.classList.toggle("on",condOn);
+  document.getElementById("condlegend").classList.toggle("show",condOn);render();};
 let qt;document.getElementById("nameFilter").oninput=function(){clearTimeout(qt);qt=setTimeout(()=>{state.q=this.value.trim().toLowerCase();render();},180);};
 
 // ---------- density: three comparable metrics ----------
@@ -390,6 +415,8 @@ function buildStrip(){
   const tot={parks:0,school:0,nycha:0};
   places.forEach(p=>{if(p.kind==="playground")tot[p.src]=(tot[p.src]||0)+1;});
   const totAll=tot.parks+tot.school+tot.nycha;
+  const gr=places.filter(p=>p.grade);
+  const pctA=gr.length?Math.round(100*gr.filter(p=>p.grade==="A").length/gr.length):0;
   const tiles=[
     ["",`${totAll.toLocaleString()} public playgrounds`,`Parks ${tot.parks} · School ${tot.school} · NYCHA ${tot.nycha}`],
     ["hl",`${densest.per_sqmi} / sq mi`,`Densest: ${densest.name}`],
@@ -397,6 +424,7 @@ function buildStrip(){
     ["warn",`${stretched.kids_per_pg.toLocaleString()} kids/pg`,`Most stretched: ${stretched.name}`],
     ["warn",`${none.length}`,`Neighborhoods with kids but no public playground${none[0]?` (e.g. ${none[0].name})`:""}`],
     ["",`${med.toLocaleString()} kids/pg`,"Citywide median per playground"],
+    ["",`${pctA}% acceptable`,"Condition of inspected sites (2025–26)"],
   ];
   document.getElementById("statstrip").innerHTML=tiles.map(([cls,v,l])=>
     `<div class="stat-tile ${cls}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
