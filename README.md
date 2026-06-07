@@ -1,4 +1,4 @@
-# The NYC Playground Atlas
+# Where They Can Play
 
 An interactive field guide to every public playground and recreational court
 across New York City — children's play areas (swings, slides, climbers), plus
